@@ -29,7 +29,7 @@ class BBCNewsScraper:
             'World': 'https://www.bbc.com/news/world',
             'Business': 'https://www.bbc.com/news/business',
             'Technology': 'https://www.bbc.com/news/technology',
-            'Science': 'https://www.bbc.com/news/science-environment'
+            'Entertainment': 'https://www.bbc.com/news/entertainment-arts'
         }
 
     def aceptar_cookies(self):
@@ -139,22 +139,46 @@ class BBCNewsScraper:
         print(f"URL: {url}")
         print(f"{'='*60}")
 
+        articulos_categoria = []
+        pagina = 1
+        max_paginas = 3
+
         try:
-            self.driver.get(url)
-            time.sleep(3)
+            while len(articulos_categoria) < max_articulos and pagina <= max_paginas:
+                print(f"\nPágina {pagina}/{max_paginas}")
 
-            if len(self.noticias) == 0:
-                self.aceptar_cookies()
+                self.driver.get(url)
+                time.sleep(3)
 
-            self.scroll_pagina(scrolls=5)
+                if len(self.noticias) == 0 and pagina == 1:
+                    self.aceptar_cookies()
 
-            articulos = self.extraer_articulos(max_articulos)
+                self.scroll_pagina(scrolls=50)
 
-            for articulo in articulos:
+                articulos = self.extraer_articulos(max_articulos - len(articulos_categoria))
+
+                for articulo in articulos:
+                    if articulo['titulo'] not in [a['titulo'] for a in articulos_categoria]:
+                        articulos_categoria.append(articulo)
+
+                print(f"Subtotal página {pagina}: {len(articulos)} artículos")
+                print(f"Total categoría {nombre_categoria}: {len(articulos_categoria)} artículos")
+
+                # Buscar botón "Show more" o similar
+                try:
+                    show_more = self.driver.find_element(By.XPATH, "//a[contains(text(), 'More') or contains(text(), 'older')]")
+                    url = show_more.get_attribute('href')
+                    pagina += 1
+                    time.sleep(2)
+                except:
+                    print("No se encontró botón para cargar más artículos")
+                    break
+
+            for articulo in articulos_categoria:
                 articulo['categoria'] = nombre_categoria
                 self.noticias.append(articulo)
 
-            print(f"Extraídos {len(articulos)} artículos de {nombre_categoria}")
+            print(f"Extraídos {len(articulos_categoria)} artículos de {nombre_categoria}")
             print(f"Total acumulado: {len(self.noticias)} artículos")
 
             time.sleep(3)
@@ -209,7 +233,7 @@ if __name__ == "__main__":
     scraper = BBCNewsScraper()
 
     try:
-        scraper.scrapear_todas_secciones(max_por_categoria=100)
+        scraper.scrapear_todas_secciones(max_por_categoria=200)
         df = scraper.guardar_datos('bbc_news.csv')
 
         if df is not None:
