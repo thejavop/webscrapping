@@ -60,11 +60,11 @@ class BBCNewsScraper:
     def extraer_articulos(self, max_articulos=100):
         """Extrae títulos y descripciones de artículos de la página actual"""
         articulos_extraidos = []
-        
+
         try:
             # Selector para artículos de BBC News
             # Nota: BBC usa diferentes estructuras, probamos varios selectores
-            
+
             # Opción 1: Selectores comunes de BBC
             selectores = [
                 "div[data-testid='anchor-inner-wrapper']",
@@ -72,7 +72,7 @@ class BBCNewsScraper:
                 "article",
                 "div[class*='gel-layout__item']"
             ]
-            
+
             articulos_elementos = []
             for selector in selectores:
                 try:
@@ -83,16 +83,21 @@ class BBCNewsScraper:
                         break
                 except:
                     continue
-            
+
             if not articulos_elementos:
                 print("❌ No se encontraron artículos con ningún selector")
                 return articulos_extraidos
-            
+
             # Limitar al número máximo de artículos
             articulos_elementos = articulos_elementos[:max_articulos]
-            
-            for elemento in articulos_elementos:
+            print(f"⚙️ Procesando {len(articulos_elementos)} elementos...")
+
+            for idx, elemento in enumerate(articulos_elementos, 1):
                 try:
+                    # Mostrar progreso cada 10 elementos
+                    if idx % 10 == 0:
+                        print(f"   Procesados {idx}/{len(articulos_elementos)} elementos... ({len(articulos_extraidos)} artículos válidos)")
+
                     # Intentar extraer título
                     titulo = None
                     try:
@@ -104,7 +109,7 @@ class BBCNewsScraper:
                             titulo = titulo_elem.get_attribute("aria-label") or titulo_elem.text.strip()
                         except:
                             pass
-                    
+
                     # Intentar extraer descripción
                     descripcion = None
                     try:
@@ -112,17 +117,19 @@ class BBCNewsScraper:
                         descripcion = desc_elem.text.strip()
                     except:
                         pass
-                    
+
                     # Guardar si tenemos al menos el título
                     if titulo and len(titulo) > 10:
                         articulos_extraidos.append({
                             'titulo': titulo,
                             'descripcion': descripcion if descripcion else ""
                         })
-                
+
                 except Exception as e:
                     continue
-            
+
+            print(f"   ✅ Procesamiento completado: {len(articulos_elementos)} elementos")
+
             # Eliminar duplicados basados en título
             titulos_vistos = set()
             articulos_unicos = []
@@ -130,9 +137,9 @@ class BBCNewsScraper:
                 if articulo['titulo'] not in titulos_vistos:
                     titulos_vistos.add(articulo['titulo'])
                     articulos_unicos.append(articulo)
-            
+
             return articulos_unicos[:max_articulos]
-        
+
         except Exception as e:
             print(f"❌ Error extrayendo artículos: {e}")
             return articulos_extraidos
