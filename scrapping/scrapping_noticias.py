@@ -62,7 +62,7 @@ class BBCNewsScraper:
         try:
             contenedor = None
             try:
-                contenedor = self.driver.find_element(By.CSS_SELECTOR, "#main-content > article > section.sc-8687269a-1.jXcOGh")
+                contenedor = self.driver.find_element(By.CSS_SELECTOR, "#main-content > article")
                 print("✓ Encontrado contenedor Latest Updates")
             except:
                 print("⚠️  No se encontró el contenedor específico, usando página completa")
@@ -219,7 +219,6 @@ class BBCNewsScraper:
                         # Capturar el texto del primer artículo ANTES del click
                         try:
                             primer_articulo_antes = contenedor.find_element(By.CSS_SELECTOR, "div[data-testid='anchor-inner-wrapper'] h3, div[data-testid='anchor-inner-wrapper'] h2").text
-                            print(f"Primer artículo ANTES: {primer_articulo_antes[:50]}...")
                         except:
                             primer_articulo_antes = None
                         
@@ -240,7 +239,6 @@ class BBCNewsScraper:
                                 
                                 if primer_articulo_despues != primer_articulo_antes:
                                     print(f"✓ CONTENIDO CAMBIÓ en {intento+1} segundos")
-                                    print(f"Primer artículo DESPUÉS: {primer_articulo_despues[:50]}...")
                                     cambio_detectado = True
                                     pagina += 1
                                     break
