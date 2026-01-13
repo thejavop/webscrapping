@@ -123,7 +123,7 @@ class ABCNewsScraper:
                     titulo = None
                     url = None
                     
-                    # ← NUEVO: Buscar URL del artículo (normalmente en un enlace <a>)
+                    # Buscar URL del artículo (normalmente en un enlace <a>)
                     try:
                         link_elem = elemento.find_element(By.CSS_SELECTOR, "a[href]")
                         url = link_elem.get_attribute('href')

@@ -43,7 +43,11 @@ class PreprocesadorNoticias:
     'hace', 'hacen', 'hizo', 'hicieron', 'hará', 'harán', 'haría', 'harían',
     'dice', 'dicen', 'dijo', 'dijeron', 'dirá', 'dirán', 'diría', 'dirían',
     'va', 'van', 'voy', 'vas', 'vamos', 'vais', 'iba', 'iban', 'irá', 'irán',
-    'sea', 'sean', 'soy', 'eres', 'somos', 'sois', 'seré', 'serás', 'será', 'serán'
+    'sea', 'sean', 'soy', 'eres', 'somos', 'sois', 'seré', 'serás', 'será', 'serán',
+    'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo','enero',
+    'febrero', 'marzo', 'abril', 'mayo', 'junio','julio', 'agosto', 'septiembre', 'octubre', 
+    'noviembre', 'diciembre','ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 
+    'oct', 'nov', 'dic','efe','abc','ee', 'uu'  # ← Añadido ee y uu por si se escapan
 ]
 
     def __init__(self, nombre_archivo='abc_news.csv'):
@@ -65,7 +69,7 @@ class PreprocesadorNoticias:
         """Carga el CSV y elimina duplicados"""
         print(f"📂 Cargando datos desde: {os.path.abspath(self.archivo_entrada)}")
         try:
-            self.df = pd.read_csv(self.archivo_entrada, dtype=str)
+            self.df = pd.read_csv(self.archivo_entrada)
             antes = len(self.df)
             self.df = self.df.drop_duplicates(subset=['titulo']).dropna(subset=['categoria'])
             print(f"✓ Cargados {len(self.df)} artículos únicos (Eliminados {antes - len(self.df)} duplicados)")
@@ -77,12 +81,55 @@ class PreprocesadorNoticias:
             exit()
 
     def limpiar_texto(self, texto):
-        """Limpia el texto: lowercase, quita URLs, caracteres especiales"""
+        """Limpia el texto: lowercase, normaliza abreviaturas, quita números y caracteres especiales"""
         if pd.isna(texto) or not isinstance(texto, str):
             return ""
 
         # Lowercase
         texto = texto.lower()
+        
+        # ← NUEVO: Normalizar abreviaturas comunes ANTES de limpiar caracteres especiales
+        # Esto convierte "EE.UU." → "estadosunidos" (una sola palabra)
+        # IMPORTANTE: El orden importa - patrones más específicos primero
+        abreviaturas = {
+            # Estados Unidos (todas las variantes)
+            r'\bee\.?\s?uu\.?\b': 'estadosunidos',           # EE.UU., ee.uu., EEUU
+            r'\buu\.?\s?ee\.?\b': 'estadosunidos',           # UU.EE.
+            r'\bestados\s+unidos(?:\s+de\s+am[eé]rica)?\b': 'estadosunidos',  # Estados Unidos (de América)
+            
+            # Recursos Humanos
+            r'\brr\.?\s?hh\.?\b': 'recursoshumanos',         # RR.HH.
+            r'\brecursos\s+humanos\b': 'recursoshumanos',    # Recursos Humanos
+            
+            # Unión Europea
+            r'\bunion\s+europea\b': 'unioneuropea',          # Unión Europea
+            r'\bue\b': 'unioneuropea',                       # UE
+            r'\bpresos\s+pol[ií]ticos\b': 'presospoliticos', # Presos políticos
+            r'\bderechos\s+humanos\b': 'derechoshumanos',    # Derechos humanos
+            r'\bcambio\s+clim[aá]tico\b': 'cambioclimatico', # Cambio climático
+            r'\binteligencia\s+artificial\b': 'inteligenciaartificial', # Inteligencia artificial
+
+
+            # Organizaciones internacionales
+            r'\bnaciones\s+unidas\b': 'nacionesunidas',      # Naciones Unidas
+            r'\bonu\b': 'nacionesunidas',                    # ONU
+            r'\botan\b': 'otan',                             # OTAN
+            r'\bfmi\b': 'fmi',                               # FMI
+            
+            # Países compuestos
+            r'\breino\s+unido\b': 'reinounido',              # Reino Unido
+            r'\barabia\s+saud[ií]\b': 'arabiasaudi',         # Arabia Saudí
+            r'\bcorea\s+del\s+sur\b': 'coreadelsur',         # Corea del Sur
+            r'\bcorea\s+del\s+norte\b': 'coreadelnorte',     # Corea del Norte
+            r'\bnueva\s+zelanda\b': 'nuevazelanda',          # Nueva Zelanda
+            
+            # Términos económicos
+            r'\bpib\b': 'pib',                               # PIB
+            r'\biva\b': 'iva',                               # IVA
+        }
+        
+        for patron, reemplazo in abreviaturas.items():
+            texto = re.sub(patron, reemplazo, texto)
 
         # Quitar números
         texto = re.sub(r'\d+', '', texto)
@@ -111,6 +158,10 @@ class PreprocesadorNoticias:
         # Eliminar textos vacíos o muy cortos
         antes = len(self.df)
         self.df = self.df[self.df['texto_limpio'].str.len() > 10]
+        
+        # ← NUEVO: Reset de índices para evitar desincronización con tfidf_matrix
+        self.df = self.df.reset_index(drop=True)
+        
         print(f"✓ Texto limpiado (Eliminados {antes - len(self.df)} artículos con texto muy corto)")
 
         # Guardar CSV limpio
