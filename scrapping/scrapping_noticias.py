@@ -1,503 +1,520 @@
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import pandas as pd
-import time
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    accuracy_score, 
+    classification_report, 
+    confusion_matrix,
+    precision_recall_fscore_support
+)
+from sklearn.model_selection import GridSearchCV, cross_val_score
+import joblib
+import warnings
+warnings.filterwarnings('ignore')
 
-class ABCNewsScraper:
+# Importar la clase de preprocesamiento
+from preprocesamiento import PreprocesadorNoticias
+
+
+class ClasificadorNoticias:
+    """
+    Clasificador de noticias usando TF-IDF + Logistic Regression
+    
+    Este modelo clasifica noticias de ABC.es en 4 categorías:
+    - Internacional
+    - Economía
+    - Tecnología
+    - Cultura
+    """
+    
     def __init__(self):
-        """Inicializa el scraper con configuración de Selenium"""
-        options = webdriver.ChromeOptions()
-        options.add_argument('--headless')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--disable-blink-features=AutomationControlled')
-        options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+        self.modelo = None
+        self.mejor_modelo = None
+        self.preprocessor = None
+        self.categorias = None
+        self.metricas = {}
         
-        # Opciones para acelerar carga y evitar timeouts
-        options.add_argument('--disable-extensions')
-        options.add_argument('--disable-gpu')
-        options.add_argument('--disable-images')  # No cargar imágenes
-        options.add_argument('--blink-settings=imagesEnabled=false')
-        options.add_argument('--disk-cache-size=0')  # Sin caché
-        options.add_argument('--media-cache-size=0')
-        options.page_load_strategy = 'none'  # No espera nada, carga inmediato
-
-        # Configurar el servicio de ChromeDriver con timeout
-        from selenium.webdriver.chrome.service import Service
-        service = Service()
+    def cargar_datos_preprocesados(self):
+        """Carga y preprocesa los datos usando la clase PreprocesadorNoticias"""
+        print("="*80)
+        print("🔄 CARGANDO Y PREPROCESANDO DATOS")
+        print("="*80)
         
-        self.driver = webdriver.Chrome(options=options, service=service)
+        # Ejecutar pipeline de preprocesamiento
+        self.preprocessor = PreprocesadorNoticias('abc_news.csv')
+        self.preprocessor.ejecutar_pipeline_completo()
         
-        # Configurar timeouts muy cortos
-        self.driver.set_page_load_timeout(10)  # Solo 10 segundos
-        self.driver.set_script_timeout(10)
-
-        self.noticias = []
-        self.articulos_sin_descripcion = []
-
-        self.secciones = {
-            'Internacional': 'https://www.abc.es/internacional/',
-            'Economia': 'https://www.abc.es/economia/',
-            'Tecnologia': 'https://www.abc.es/tecnologia/',
-            'Cultura': 'https://www.abc.es/cultura/'
+        # Obtener datos procesados
+        self.X_train = self.preprocessor.X_train
+        self.X_test = self.preprocessor.X_test
+        self.y_train = self.preprocessor.y_train
+        self.y_test = self.preprocessor.y_test
+        
+        # Guardar categorías únicas
+        self.categorias = sorted(np.unique(self.y_train))
+        
+        print("\n✅ Datos cargados correctamente")
+        
+    def entrenar_modelo_base(self):
+        """Entrena un modelo LogisticRegression básico"""
+        print("\n" + "="*80)
+        print("🤖 ENTRENANDO MODELO BASE: Logistic Regression")
+        print("="*80)
+        
+        # Crear modelo con parámetros por defecto
+        self.modelo = LogisticRegression(
+            max_iter=1000,
+            random_state=42,
+            multi_class='multinomial',  # Para múltiples categorías
+            solver='lbfgs',
+            verbose=0
+        )
+        
+        print("\n⏳ Entrenando modelo...")
+        self.modelo.fit(self.X_train, self.y_train)
+        print("✅ Modelo entrenado exitosamente")
+        
+    def evaluar_modelo(self, modelo, nombre_modelo="Modelo"):
+        """Evalúa el modelo y calcula todas las métricas"""
+        print(f"\n{'='*80}")
+        print(f"📊 EVALUANDO {nombre_modelo.upper()}")
+        print(f"{'='*80}")
+        
+        # Predicciones
+        y_pred_train = modelo.predict(self.X_train)
+        y_pred_test = modelo.predict(self.X_test)
+        
+        # Accuracy
+        train_acc = accuracy_score(self.y_train, y_pred_train)
+        test_acc = accuracy_score(self.y_test, y_pred_test)
+        
+        print(f"\n🎯 ACCURACY:")
+        print(f"   - Train: {train_acc:.4f} ({train_acc*100:.2f}%)")
+        print(f"   - Test:  {test_acc:.4f} ({test_acc*100:.2f}%)")
+        
+        # Reporte de clasificación
+        print(f"\n📋 REPORTE DE CLASIFICACIÓN (Test):")
+        print("-"*80)
+        report = classification_report(
+            self.y_test, 
+            y_pred_test, 
+            target_names=self.categorias,
+            digits=4
+        )
+        print(report)
+        
+        # Métricas por categoría
+        precision, recall, f1, support = precision_recall_fscore_support(
+            self.y_test, 
+            y_pred_test, 
+            labels=self.categorias,
+            average=None
+        )
+        
+        print(f"\n📈 MÉTRICAS DETALLADAS POR CATEGORÍA:")
+        print("-"*80)
+        print(f"{'Categoría':<20} {'Precision':<12} {'Recall':<12} {'F1-Score':<12} {'Soporte':<10}")
+        print("-"*80)
+        for i, cat in enumerate(self.categorias):
+            print(f"{cat:<20} {precision[i]:<12.4f} {recall[i]:<12.4f} {f1[i]:<12.4f} {support[i]:<10}")
+        
+        # Promedios
+        precision_avg, recall_avg, f1_avg, _ = precision_recall_fscore_support(
+            self.y_test, 
+            y_pred_test,
+            average='weighted'
+        )
+        
+        print("-"*80)
+        print(f"{'PROMEDIO (weighted)':<20} {precision_avg:<12.4f} {recall_avg:<12.4f} {f1_avg:<12.4f}")
+        print("-"*80)
+        
+        # Matriz de confusión
+        cm = confusion_matrix(self.y_test, y_pred_test, labels=self.categorias)
+        
+        # Guardar métricas
+        metricas = {
+            'nombre': nombre_modelo,
+            'train_accuracy': train_acc,
+            'test_accuracy': test_acc,
+            'precision': precision_avg,
+            'recall': recall_avg,
+            'f1_score': f1_avg,
+            'confusion_matrix': cm,
+            'y_pred_test': y_pred_test
         }
-
-    def aceptar_cookies(self):
-        """Acepta el banner de cookies si aparece"""
-        try:
-            print("Buscando banner de cookies...")
-            selectores_cookies = [
-                "//button[contains(text(), 'Aceptar')]",
-                "//button[contains(text(), 'Acepto')]",
-                "//button[contains(text(), 'Accept')]",
-                "//a[contains(text(), 'Aceptar')]",
-                "//button[@id='didomi-notice-agree-button']"
-            ]
-            
-            for selector in selectores_cookies:
-                try:
-                    boton_cookies = WebDriverWait(self.driver, 3).until(
-                        EC.element_to_be_clickable((By.XPATH, selector))
-                    )
-                    boton_cookies.click()
-                    print("✓ Cookies aceptadas")
-                    time.sleep(1)
-                    return
-                except:
-                    continue
-                    
-            print("No se encontró banner de cookies")
-        except Exception as e:
-            print(f"Error con cookies: {e}")
-
-    def scroll_pagina(self, scrolls=3):
-        """Hace scroll para cargar más contenido dinámico"""
-        print(f"Haciendo scroll ({scrolls} veces)...")
-        for i in range(scrolls):
-            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(1)
-            print(f"   Scroll {i+1}/{scrolls}")
+        
+        return metricas
     
-    def extraer_articulos(self, max_articulos=100):
-        """Extrae títulos, descripciones y URLs de artículos de la página actual"""
-        articulos_extraidos = []
-
-        try:
-            selectores = [
-                "article",
-                "div[class*='noticia']",
-                "div[class*='article']",
-                "div[class*='news']",
-                "div[class*='story']",
-                "div[data-test*='article']",
-                "li[class*='item']"
-            ]
-
-            articulos_elementos = []
-            for selector in selectores:
-                try:
-                    elementos = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                    if elementos and len(elementos) > 5:
-                        articulos_elementos = elementos
-                        print(f"✓ Encontrados {len(elementos)} elementos con selector: {selector}")
-                        break
-                except:
-                    continue
-
-            if not articulos_elementos:
-                print("⚠️  No se encontraron artículos con ningún selector")
-                return articulos_extraidos
-            
-            self.driver.implicitly_wait(0)
-            articulos_elementos = articulos_elementos[:max_articulos]
-            print(f"Procesando {len(articulos_elementos)} elementos...")
-
-            for idx, elemento in enumerate(articulos_elementos, 1):
-                try:
-                    if idx % 10 == 0:
-                        print(f"   Procesados {idx}/{len(articulos_elementos)} elementos... ({len(articulos_extraidos)} artículos válidos)")
-
-                    titulo = None
-                    url = None
-                    
-                    # Buscar URL del artículo (normalmente en un enlace <a>)
-                    try:
-                        link_elem = elemento.find_element(By.CSS_SELECTOR, "a[href]")
-                        url = link_elem.get_attribute('href')
-                        # Asegurar que sea una URL completa
-                        if url and not url.startswith('http'):
-                            url = f"https://www.abc.es{url}"
-                    except:
-                        pass
-
-                    # Buscar título
-                    try:
-                        for tag in ['h1', 'h2', 'h3', 'h4']:
-                            try:
-                                titulo_elem = elemento.find_element(By.TAG_NAME, tag)
-                                titulo = titulo_elem.text.strip()
-                                if titulo and len(titulo) > 10:
-                                    break
-                            except:
-                                continue
-                        
-                        if not titulo:
-                            titulo_elem = elemento.find_element(By.CSS_SELECTOR, "[class*='title'], [class*='titulo'], [class*='headline']")
-                            titulo = titulo_elem.text.strip()
-                    except:
-                        pass
-
-                    descripcion = None
-                    try:
-                        desc_elem = elemento.find_element(By.CSS_SELECTOR, "p, [class*='description'], [class*='descripcion'], [class*='summary'], [class*='sumario']")
-                        descripcion = desc_elem.text.strip()
-                    except:
-                        pass
-
-                    if titulo and len(titulo) > 10:
-                        articulos_extraidos.append({
-                            'titulo': titulo,
-                            'descripcion': descripcion if descripcion else "",
-                            'url_interna': url if url else ""  # Solo para uso interno
-                        })
-
-                except Exception as e:
-                    continue
-
-            print(f"   Procesamiento completado: {len(articulos_elementos)} elementos")
-
-            # Eliminar duplicados
-            titulos_vistos = set()
-            articulos_unicos = []
-            for articulo in articulos_extraidos:
-                if articulo['titulo'] not in titulos_vistos:
-                    titulos_vistos.add(articulo['titulo'])
-                    articulos_unicos.append(articulo)
-
-            return articulos_unicos[:max_articulos]
-
-        except Exception as e:
-            print(f"Error extrayendo artículos: {e}")
-            return articulos_extraidos
+    def optimizar_hiperparametros(self):
+        """Optimiza hiperparámetros usando GridSearchCV"""
+        print("\n" + "="*80)
+        print("🔧 OPTIMIZANDO HIPERPARÁMETROS CON GRIDSEARCHCV")
+        print("="*80)
+        
+        # Definir grilla de parámetros
+        param_grid = {
+            'C': [0.01, 0.1, 1, 10, 100],  # Regularización
+            'penalty': ['l2'],  # Tipo de regularización
+            'solver': ['lbfgs', 'saga'],  # Algoritmo de optimización
+            'max_iter': [1000, 2000]
+        }
+        
+        print("\n🔍 Parámetros a probar:")
+        for param, values in param_grid.items():
+            print(f"   - {param}: {values}")
+        
+        total_combinaciones = np.prod([len(v) for v in param_grid.values()])
+        print(f"\n📊 Total de combinaciones: {total_combinaciones}")
+        print(f"⏳ Esto puede tardar varios minutos...")
+        
+        # GridSearchCV
+        grid_search = GridSearchCV(
+            LogisticRegression(
+                random_state=42,
+                multi_class='multinomial',
+                verbose=0
+            ),
+            param_grid,
+            cv=5,  # 5-fold cross-validation
+            scoring='accuracy',
+            n_jobs=-1,  # Usar todos los cores
+            verbose=1
+        )
+        
+        grid_search.fit(self.X_train, self.y_train)
+        
+        # Mejor modelo
+        self.mejor_modelo = grid_search.best_estimator_
+        
+        print("\n✅ Optimización completada")
+        print(f"\n🏆 MEJORES HIPERPARÁMETROS:")
+        for param, value in grid_search.best_params_.items():
+            print(f"   - {param}: {value}")
+        
+        print(f"\n📊 Mejor Score (CV): {grid_search.best_score_:.4f}")
+        
+        # Mostrar top 5 configuraciones
+        print(f"\n🥇 TOP 5 CONFIGURACIONES:")
+        print("-"*80)
+        results_df = pd.DataFrame(grid_search.cv_results_)
+        top_5 = results_df.nlargest(5, 'mean_test_score')[
+            ['params', 'mean_test_score', 'std_test_score']
+        ]
+        for idx, row in top_5.iterrows():
+            print(f"{row['mean_test_score']:.4f} (+/- {row['std_test_score']*2:.4f}) - {row['params']}")
+        
+        return self.mejor_modelo
     
-    def extraer_primer_parrafo(self, url):
-        """Visita una URL y extrae el subtítulo del artículo"""
-        max_intentos = 2
+    def validacion_cruzada(self, modelo, nombre="Modelo"):
+        """Realiza validación cruzada de 5-fold"""
+        print(f"\n{'='*80}")
+        print(f"🔄 VALIDACIÓN CRUZADA (5-FOLD) - {nombre}")
+        print(f"{'='*80}")
         
-        for intento in range(max_intentos):
-            try:
-                if intento > 0:
-                    print(f"   🔄 Reintento {intento + 1}/{max_intentos}...")
-                else:
-                    print(f"   Visitando: {url[:60]}...")
-                
-                try:
-                    self.driver.get(url)
-                    # Con page_load_strategy='none', cargamos y esperamos un poco
-                    time.sleep(3)  # Dar tiempo a que cargue el contenido básico
-                except Exception as timeout_error:
-                    if intento == max_intentos - 1:
-                        print(f"   ✗ Timeout después de {max_intentos} intentos")
-                        return ""
-                    continue
-                
-                # Buscar directamente el subtítulo de ABC.es
-                try:
-                    subtitulo = self.driver.find_element(By.CSS_SELECTOR, "h2.voc-subtitle")
-                    texto = subtitulo.text.strip()
-                    if texto and len(texto) > 10:
-                        print(f"   ✓ Subtítulo extraído ({len(texto)} chars)")
-                        return texto
-                except:
-                    pass  # No encontró, continuar con fallback
-                
-                # Fallback: buscar en otros selectores comunes
-                selectores_parrafo = [
-                    "article p",
-                    "div[class*='article-body'] p",
-                    "div[class*='content'] p",
-                    "div[class*='texto'] p"
-                ]
-                
-                for selector in selectores_parrafo:
-                    try:
-                        elementos = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                        for elem in elementos:
-                            texto = elem.text.strip()
-                            if texto and len(texto) > 50:
-                                print(f"   ✓ Contenido extraído ({len(texto)} chars)")
-                                return texto
-                    except:
-                        continue
-                
-                # Si no encontró nada en este intento, reintentar
-                if intento < max_intentos - 1:
-                    print(f"   ⚠️  No se encontró contenido, reintentando...")
-                    continue
-                
-                print(f"   ✗ No se pudo extraer contenido")
-                return ""
-                
-            except Exception as e:
-                if intento == max_intentos - 1:
-                    print(f"   ✗ Error: {str(e)[:100]}")
-                return ""
+        scores = cross_val_score(
+            modelo, 
+            self.X_train, 
+            self.y_train, 
+            cv=5,
+            scoring='accuracy',
+            n_jobs=-1
+        )
         
-        return ""
+        print(f"\n📊 Scores por Fold:")
+        for i, score in enumerate(scores, 1):
+            print(f"   Fold {i}: {score:.4f} ({score*100:.2f}%)")
+        
+        print(f"\n📈 RESUMEN:")
+        print(f"   - Media:               {scores.mean():.4f} ({scores.mean()*100:.2f}%)")
+        print(f"   - Desviación estándar: {scores.std():.4f}")
+        print(f"   - Intervalo 95%:       [{scores.mean() - 2*scores.std():.4f}, {scores.mean() + 2*scores.std():.4f}]")
+        
+        return scores
     
-    def completar_descripciones(self):
-        """Visita los artículos sin descripción y extrae el primer párrafo"""
-        if not self.articulos_sin_descripcion:
-            print("\n✓ Todos los artículos tienen descripción")
-            return
+    def visualizar_matriz_confusion(self, metricas, guardar=True):
+        """Genera visualización de la matriz de confusión"""
+        plt.figure(figsize=(10, 8))
         
-        print(f"\n{'='*60}")
-        print(f"COMPLETANDO DESCRIPCIONES")
-        print(f"Artículos sin descripción: {len(self.articulos_sin_descripcion)}")
-        print(f"{'='*60}\n")
+        cm = metricas['confusion_matrix']
         
-        for idx, articulo_info in enumerate(self.articulos_sin_descripcion, 1):
-            print(f"\n[{idx}/{len(self.articulos_sin_descripcion)}] {articulo_info['titulo'][:60]}...")
-            
-            if not articulo_info['url']:
-                print(f"   ✗ Sin URL disponible")
-                continue
-            
-            descripcion = self.extraer_primer_parrafo(articulo_info['url'])
-            
-            if descripcion:
-                # Actualizar la descripción en self.noticias
-                for noticia in self.noticias:
-                    if noticia['titulo'] == articulo_info['titulo']:
-                        noticia['descripcion'] = descripcion
-                        break
-            
-            # Pequeña pausa entre requests para no saturar
-            time.sleep(2)
+        # Heatmap
+        sns.heatmap(
+            cm,
+            annot=True,
+            fmt='d',
+            cmap='Blues',
+            xticklabels=self.categorias,
+            yticklabels=self.categorias,
+            cbar_kws={'label': 'Número de predicciones'}
+        )
         
-        print(f"\n{'='*60}")
-        print(f"✓ Descripciones completadas")
-        print(f"{'='*60}")
+        plt.title(f'Matriz de Confusión - {metricas["nombre"]}\n'
+                  f'Accuracy: {metricas["test_accuracy"]:.4f}',
+                  fontsize=14, fontweight='bold', pad=20)
+        plt.ylabel('Categoría Real', fontsize=12, fontweight='bold')
+        plt.xlabel('Categoría Predicha', fontsize=12, fontweight='bold')
+        plt.tight_layout()
+        
+        if guardar:
+            filename = f'matriz_confusion_{metricas["nombre"].lower().replace(" ", "_")}.png'
+            plt.savefig(filename, dpi=300, bbox_inches='tight')
+            print(f"\n✅ Matriz de confusión guardada: '{filename}'")
+        
+        plt.show()
     
-    def scrapear_seccion(self, nombre_categoria, url, max_articulos=200):
-        """Scrape una sección específica de ABC"""
-        print(f"\n{'='*60}")
-        print(f"Scrapeando: {nombre_categoria}")
-        print(f"URL: {url}")
-        print(f"{'='*60}")
-
-        articulos_categoria = []
-        pagina = 1
-        max_paginas = 10
-
-        try:
-            while len(articulos_categoria) < max_articulos and pagina <= max_paginas:
-                print(f"\n{'*'*40}")
-                print(f"PÁGINA {pagina}/{max_paginas}")
-                print(f"Artículos acumulados: {len(articulos_categoria)}")
-                print(f"{'*'*40}")
-
-                if pagina == 1:
-                    self.driver.get(url)
-                    time.sleep(3)
-                    
-                    if len(self.noticias) == 0:
-                        self.aceptar_cookies()
-
-                self.scroll_pagina(scrolls=5)
-
-                articulos = self.extraer_articulos(max_articulos - len(articulos_categoria))
-                
-                print(f"\n>>> Extraídos de la página: {len(articulos)} artículos")
-                
-                print("\n📰 PRIMEROS 3 TÍTULOS:")
-                for i, art in enumerate(articulos[:3], 1):
-                    print(f"   {i}. {art['titulo'][:80]}...")
-
-                nuevos = 0
-                duplicados = 0
-                
-                for articulo in articulos:
-                    if articulo['titulo'] not in [a['titulo'] for a in articulos_categoria]:
-                        articulos_categoria.append(articulo)
-                        nuevos += 1
-                        
-                        # ← NUEVO: Guardar artículos sin descripción para procesarlos después
-                        if not articulo['descripcion'] and articulo['url_interna']:
-                            self.articulos_sin_descripcion.append({
-                                'titulo': articulo['titulo'],
-                                'url': articulo['url_interna']
-                            })
-                    else:
-                        duplicados += 1
-
-                print(f"\n>>> Nuevos agregados: {nuevos}")
-                print(f">>> Duplicados ignorados: {duplicados}")
-                print(f">>> TOTAL ACUMULADO: {len(articulos_categoria)} artículos")
-
-                if nuevos == 0:
-                    print("\n⚠️  NO SE AGREGARON ARTÍCULOS NUEVOS - Fin de paginación")
-                    break
-
-                try:
-                    print("\n🔄 Buscando botón 'Cargar más'...")
-                    
-                    load_more_button = None
-                    
-                    selectores_load_more = [
-                        "div.voc-btn__container button",
-                        "div.voc-btn__container a",
-                        "button[class*='cargar']",
-                        "button[class*='more']",
-                        "a[class*='cargar']",
-                        "a[class*='more']",
-                        "//button[contains(text(), 'Cargar')]",
-                        "//button[contains(text(), 'Ver más')]",
-                        "//a[contains(text(), 'Cargar')]",
-                        "//a[contains(text(), 'Ver más')]"
-                    ]
-                    
-                    self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                    time.sleep(2)
-                    
-                    for selector in selectores_load_more:
-                        try:
-                            if selector.startswith("//"):
-                                load_more_button = self.driver.find_element(By.XPATH, selector)
-                            else:
-                                load_more_button = self.driver.find_element(By.CSS_SELECTOR, selector)
-                            
-                            if load_more_button.is_displayed():
-                                print(f"✓ Botón 'Cargar más' encontrado con: {selector}")
-                                break
-                            else:
-                                load_more_button = None
-                        except:
-                            continue
-                    
-                    if load_more_button:
-                        try:
-                            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", load_more_button)
-                            time.sleep(1)
-                            
-                            self.driver.execute_script("arguments[0].click();", load_more_button)
-                            print(f"✓ Click en 'Cargar más' ejecutado")
-                            
-                            time.sleep(4)
-                            
-                            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                            time.sleep(2)
-                            
-                            pagina += 1
-                            print(f"✓ Página {pagina} cargada")
-                            
-                        except Exception as e:
-                            print(f"Error haciendo click en botón: {e}")
-                            break
-                    else:
-                        print("✗ No se encontró botón 'Cargar más' - fin de contenido")
-                        break
-                        
-                except Exception as e:
-                    print(f"Error en carga de más artículos: {e}")
-                    break
-
-            for articulo in articulos_categoria:
-                articulo['categoria'] = nombre_categoria
-                self.noticias.append(articulo)
-
-            print(f"\n{'='*60}")
-            print(f"RESUMEN {nombre_categoria}:")
-            print(f"Total extraído: {len(articulos_categoria)} artículos")
-            print(f"Páginas procesadas: {pagina}")
-            print(f"Total acumulado: {len(self.noticias)} artículos")
-            print(f"{'='*60}")
-
-            time.sleep(2)
-
-        except Exception as e:
-            print(f"Error scrapeando {nombre_categoria}: {e}")
-    
-    def scrapear_todas_secciones(self, max_por_categoria=200):
-        """Scrape todas las secciones definidas"""
-        print("="*60)
-        print("INICIANDO SCRAPING DE ABC.es")
-        print("="*60)
-        print(f"Objetivo: {max_por_categoria} artículos por categoría")
-        print(f"Categorías: {list(self.secciones.keys())}\n")
-
-        for categoria, url in self.secciones.items():
-            self.scrapear_seccion(categoria, url, max_por_categoria)
-
-        # ← NUEVO: Completar descripciones después de scrapear todas las secciones
-        self.completar_descripciones()
-
-        print(f"\n{'='*60}")
-        print(f"SCRAPING COMPLETADO")
-        print(f"Total de artículos: {len(self.noticias)}")
-        print(f"{'='*60}")
-    
-    def guardar_datos(self, filename='abc_news.csv'):
-        """Guarda los datos en un CSV"""
-        if not self.noticias:
-            print("No hay noticias para guardar")
-            return None
-
-        df = pd.DataFrame(self.noticias)
-
-        # Eliminar la columna url_interna antes de guardar
-        if 'url_interna' in df.columns:
-            df = df.drop('url_interna', axis=1)
-
-        df = df.drop_duplicates(subset=['titulo'])
-        df = df[df['titulo'].str.len() > 10]
-
-        df.to_csv(filename, index=False, encoding='utf-8')
-
-        print(f"\n✓ Datos guardados en '{filename}'")
-        print(f"\nRESUMEN FINAL:")
-        print(f"   - Total artículos: {len(df)}")
+    def visualizar_metricas_por_categoria(self, metricas, guardar=True):
+        """Genera gráfico de barras con métricas por categoría"""
+        # Calcular métricas por categoría
+        precision, recall, f1, support = precision_recall_fscore_support(
+            self.y_test,
+            metricas['y_pred_test'],
+            labels=self.categorias,
+            average=None
+        )
         
-        # ← NUEVO: Mostrar estadísticas de descripciones
-        con_descripcion = df[df['descripcion'].str.len() > 0].shape[0]
-        sin_descripcion = df[df['descripcion'].str.len() == 0].shape[0]
-        print(f"   - Con descripción: {con_descripcion}")
-        print(f"   - Sin descripción: {sin_descripcion}")
+        # Crear DataFrame para visualización
+        df_metricas = pd.DataFrame({
+            'Categoría': self.categorias,
+            'Precision': precision,
+            'Recall': recall,
+            'F1-Score': f1
+        })
         
-        print(f"   - Distribución por categoría:")
-        print(df['categoria'].value_counts().to_string())
-        print(f"\nMuestra de datos:")
-        print(df.head(3).to_string())
-
-        return df
-
-    def cerrar(self):
-        """Cierra el navegador"""
-        print("\nCerrando navegador...")
-        self.driver.quit()
+        # Configurar gráfico
+        fig, ax = plt.subplots(figsize=(12, 6))
+        
+        x = np.arange(len(self.categorias))
+        width = 0.25
+        
+        bars1 = ax.bar(x - width, df_metricas['Precision'], width, label='Precision', color='skyblue')
+        bars2 = ax.bar(x, df_metricas['Recall'], width, label='Recall', color='lightcoral')
+        bars3 = ax.bar(x + width, df_metricas['F1-Score'], width, label='F1-Score', color='lightgreen')
+        
+        # Añadir valores sobre las barras
+        def autolabel(bars):
+            for bar in bars:
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2., height,
+                       f'{height:.3f}',
+                       ha='center', va='bottom', fontsize=9)
+        
+        autolabel(bars1)
+        autolabel(bars2)
+        autolabel(bars3)
+        
+        ax.set_xlabel('Categoría', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Score', fontsize=12, fontweight='bold')
+        ax.set_title(f'Métricas por Categoría - {metricas["nombre"]}\n'
+                     f'Accuracy General: {metricas["test_accuracy"]:.4f}',
+                     fontsize=14, fontweight='bold', pad=20)
+        ax.set_xticks(x)
+        ax.set_xticklabels(self.categorias, rotation=45, ha='right')
+        ax.legend()
+        ax.grid(axis='y', alpha=0.3)
+        ax.set_ylim([0, 1.1])
+        
+        plt.tight_layout()
+        
+        if guardar:
+            filename = f'metricas_categoria_{metricas["nombre"].lower().replace(" ", "_")}.png'
+            plt.savefig(filename, dpi=300, bbox_inches='tight')
+            print(f"✅ Gráfico de métricas guardado: '{filename}'")
+        
+        plt.show()
+    
+    def comparar_modelos_visualizacion(self, metricas_base, metricas_optimizado, guardar=True):
+        """Compara visualmente modelo base vs optimizado"""
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+        
+        # Gráfico 1: Comparación de Accuracy
+        modelos = ['Modelo Base', 'Modelo Optimizado']
+        train_accs = [metricas_base['train_accuracy'], metricas_optimizado['train_accuracy']]
+        test_accs = [metricas_base['test_accuracy'], metricas_optimizado['test_accuracy']]
+        
+        x = np.arange(len(modelos))
+        width = 0.35
+        
+        bars1 = ax1.bar(x - width/2, train_accs, width, label='Train', color='steelblue')
+        bars2 = ax1.bar(x + width/2, test_accs, width, label='Test', color='darkorange')
+        
+        ax1.set_xlabel('Modelo', fontsize=12, fontweight='bold')
+        ax1.set_ylabel('Accuracy', fontsize=12, fontweight='bold')
+        ax1.set_title('Comparación de Accuracy', fontsize=14, fontweight='bold')
+        ax1.set_xticks(x)
+        ax1.set_xticklabels(modelos)
+        ax1.legend()
+        ax1.grid(axis='y', alpha=0.3)
+        ax1.set_ylim([0, 1.1])
+        
+        # Añadir valores
+        for bars in [bars1, bars2]:
+            for bar in bars:
+                height = bar.get_height()
+                ax1.text(bar.get_x() + bar.get_width()/2., height,
+                        f'{height:.4f}',
+                        ha='center', va='bottom', fontsize=10)
+        
+        # Gráfico 2: Comparación de métricas promedio
+        metricas_nombres = ['Precision', 'Recall', 'F1-Score']
+        base_vals = [
+            metricas_base['precision'],
+            metricas_base['recall'],
+            metricas_base['f1_score']
+        ]
+        opt_vals = [
+            metricas_optimizado['precision'],
+            metricas_optimizado['recall'],
+            metricas_optimizado['f1_score']
+        ]
+        
+        x2 = np.arange(len(metricas_nombres))
+        bars3 = ax2.bar(x2 - width/2, base_vals, width, label='Base', color='steelblue')
+        bars4 = ax2.bar(x2 + width/2, opt_vals, width, label='Optimizado', color='darkorange')
+        
+        ax2.set_xlabel('Métrica', fontsize=12, fontweight='bold')
+        ax2.set_ylabel('Score', fontsize=12, fontweight='bold')
+        ax2.set_title('Comparación de Métricas Promedio', fontsize=14, fontweight='bold')
+        ax2.set_xticks(x2)
+        ax2.set_xticklabels(metricas_nombres)
+        ax2.legend()
+        ax2.grid(axis='y', alpha=0.3)
+        ax2.set_ylim([0, 1.1])
+        
+        # Añadir valores
+        for bars in [bars3, bars4]:
+            for bar in bars:
+                height = bar.get_height()
+                ax2.text(bar.get_x() + bar.get_width()/2., height,
+                        f'{height:.3f}',
+                        ha='center', va='bottom', fontsize=9)
+        
+        plt.tight_layout()
+        
+        if guardar:
+            plt.savefig('comparacion_modelos.png', dpi=300, bbox_inches='tight')
+            print(f"\n✅ Comparación guardada: 'comparacion_modelos.png'")
+        
+        plt.show()
+    
+    def guardar_modelo(self, modelo, nombre_archivo='modelo_logistic_regression.pkl'):
+        """Guarda el modelo entrenado"""
+        joblib.dump(modelo, nombre_archivo)
+        print(f"\n💾 Modelo guardado: '{nombre_archivo}'")
+    
+    def predecir_ejemplo(self, modelo, num_ejemplos=5):
+        """Muestra predicciones de ejemplo"""
+        print(f"\n{'='*80}")
+        print(f"🔮 PREDICCIONES DE EJEMPLO")
+        print(f"{'='*80}")
+        
+        # Tomar ejemplos aleatorios del conjunto de test
+        indices_aleatorios = np.random.choice(len(self.y_test), num_ejemplos, replace=False)
+        
+        for i, idx in enumerate(indices_aleatorios, 1):
+            # Obtener texto original
+            texto_original = self.preprocessor.df.iloc[
+                self.preprocessor.df.index[idx + len(self.y_train)]
+            ]['texto_completo']
+            
+            categoria_real = self.y_test[idx]
+            categoria_predicha = modelo.predict(self.X_test[idx])[0]
+            
+            # Probabilidades
+            probabilidades = modelo.predict_proba(self.X_test[idx])[0]
+            
+            print(f"\n{'─'*80}")
+            print(f"EJEMPLO {i}:")
+            print(f"{'─'*80}")
+            print(f"📰 Texto: {texto_original[:200]}...")
+            print(f"\n✅ Categoría Real:     {categoria_real}")
+            print(f"🤖 Categoría Predicha: {categoria_predicha}")
+            
+            correcto = "✅ CORRECTO" if categoria_real == categoria_predicha else "❌ INCORRECTO"
+            print(f"   {correcto}")
+            
+            print(f"\n📊 Probabilidades:")
+            for cat, prob in zip(self.categorias, probabilidades):
+                barra = '█' * int(prob * 30)
+                print(f"   {cat:<20} {prob:.4f} {barra}")
+    
+    def ejecutar_pipeline_completo(self):
+        """Ejecuta el pipeline completo de entrenamiento y evaluación"""
+        print("\n" + "🚀"*40)
+        print("PIPELINE COMPLETO DE CLASIFICACIÓN DE NOTICIAS")
+        print("🚀"*40 + "\n")
+        
+        # 1. Cargar y preprocesar datos
+        self.cargar_datos_preprocesados()
+        
+        # 2. Entrenar modelo base
+        self.entrenar_modelo_base()
+        
+        # 3. Evaluar modelo base
+        metricas_base = self.evaluar_modelo(self.modelo, "Modelo Base")
+        
+        # 4. Validación cruzada del modelo base
+        scores_base = self.validacion_cruzada(self.modelo, "Modelo Base")
+        
+        # 5. Optimizar hiperparámetros
+        mejor_modelo = self.optimizar_hiperparametros()
+        
+        # 6. Evaluar modelo optimizado
+        metricas_optimizado = self.evaluar_modelo(mejor_modelo, "Modelo Optimizado")
+        
+        # 7. Validación cruzada del modelo optimizado
+        scores_optimizado = self.validacion_cruzada(mejor_modelo, "Modelo Optimizado")
+        
+        # 8. Visualizaciones
+        print("\n" + "="*80)
+        print("📊 GENERANDO VISUALIZACIONES")
+        print("="*80)
+        
+        self.visualizar_matriz_confusion(metricas_base)
+        self.visualizar_matriz_confusion(metricas_optimizado)
+        self.visualizar_metricas_por_categoria(metricas_base)
+        self.visualizar_metricas_por_categoria(metricas_optimizado)
+        self.comparar_modelos_visualizacion(metricas_base, metricas_optimizado)
+        
+        # 9. Predicciones de ejemplo
+        self.predecir_ejemplo(mejor_modelo, num_ejemplos=5)
+        
+        # 10. Guardar mejor modelo
+        self.guardar_modelo(mejor_modelo, 'modelo_logistic_regression_optimizado.pkl')
+        
+        # Resumen final
+        print("\n" + "="*80)
+        print("✅ PIPELINE COMPLETADO EXITOSAMENTE")
+        print("="*80)
+        print(f"\n📊 RESUMEN FINAL:")
+        print(f"{'─'*80}")
+        print(f"{'MODELO':<30} {'Train Acc':<12} {'Test Acc':<12} {'F1-Score':<12}")
+        print(f"{'─'*80}")
+        print(f"{'Modelo Base':<30} {metricas_base['train_accuracy']:<12.4f} {metricas_base['test_accuracy']:<12.4f} {metricas_base['f1_score']:<12.4f}")
+        print(f"{'Modelo Optimizado':<30} {metricas_optimizado['train_accuracy']:<12.4f} {metricas_optimizado['test_accuracy']:<12.4f} {metricas_optimizado['f1_score']:<12.4f}")
+        print(f"{'─'*80}")
+        
+        mejora = (metricas_optimizado['test_accuracy'] - metricas_base['test_accuracy']) * 100
+        print(f"\n📈 Mejora en Test Accuracy: {mejora:+.2f}%")
+        
+        print(f"\n📁 Archivos generados:")
+        print(f"   - modelo_logistic_regression_optimizado.pkl")
+        print(f"   - matriz_confusion_modelo_base.png")
+        print(f"   - matriz_confusion_modelo_optimizado.png")
+        print(f"   - metricas_categoria_modelo_base.png")
+        print(f"   - metricas_categoria_modelo_optimizado.png")
+        print(f"   - comparacion_modelos.png")
+        
+        print("\n" + "🎉"*40)
+        print("¡CLASIFICADOR DE NOTICIAS COMPLETADO!")
+        print("🎉"*40 + "\n")
 
 
 if __name__ == "__main__":
-    scraper = ABCNewsScraper()
-
-    try:
-        scraper.scrapear_todas_secciones(max_por_categoria=200)
-        df = scraper.guardar_datos('abc_news.csv')
-
-        if df is not None:
-            print("\n✓ Proceso completado exitosamente")
-            print(f"✓ Archivo generado: abc_news.csv")
-
-    except KeyboardInterrupt:
-        print("\nScraping interrumpido por el usuario")
-
-    except Exception as e:
-        print(f"\nError general: {e}")
-        import traceback
-        traceback.print_exc()
-
-    finally:
-        scraper.cerrar()
+    # Crear instancia del clasificador
+    clasificador = ClasificadorNoticias()
+    
+    # Ejecutar pipeline completo
+    clasificador.ejecutar_pipeline_completo()
