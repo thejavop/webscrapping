@@ -4,59 +4,237 @@ import matplotlib.pyplot as plt
 import re
 import os
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.model_selection import train_test_split
 
 class PreprocesadorNoticias:
-    def __init__(self, nombre_archivo='bbc_news.csv'):
+    # Lista de stop words en español (palabras comunes sin valor semántico)
+    STOP_WORDS_ES = [
+        'el', 'la', 'de', 'que', 'y', 'a', 'en', 'un', 'ser', 'se', 'no', 'haber',
+        'por', 'con', 'su', 'para', 'como', 'estar', 'tener', 'le', 'lo', 'todo',
+        'pero', 'más', 'hacer', 'o', 'poder', 'decir', 'este', 'ir', 'otro', 'ese',
+        'si', 'me', 'ya', 'ver', 'porque', 'dar', 'cuando', 'muy', 'sin', 'vez',
+        'mucho', 'saber', 'qué', 'sobre', 'mi', 'alguno', 'mismo', 'yo', 'también',
+        'hasta', 'año', 'dos', 'querer', 'entre', 'así', 'desde', 'grande', 'eso',
+        'ni', 'nos', 'llegar', 'pasar', 'tiempo', 'ella', 'sí', 'día', 'uno', 'bien',
+        'poco', 'deber', 'entonces', 'poner', 'cosa', 'tanto', 'hombre', 'parecer',
+        'tan', 'donde', 'ahora', 'parte', 'después', 'vida', 'quedar', 'siempre',
+        'creer', 'hablar', 'llevar', 'dejar', 'nada', 'cada', 'seguir', 'menos',
+        'nuevo', 'encontrar', 'algo', 'solo', 'estos', 'trabajar', 'cual', 'tres',
+        'tal', 'ha', 'han', 'las', 'los', 'una', 'unos', 'unas', 'al', 'del', 'son',
+        'es', 'fue', 'fueron', 'era', 'eran', 'siendo', 'sido', 'está', 'están',
+        'estaba', 'estaban', 'he', 'has', 'hemos', 'había', 'habían', 'te', 'tu', 'tus',
+        'ese', 'esa', 'esos', 'esas', 'este', 'esta', 'estos', 'estas', 'aquel',
+        'aquella', 'aquellos', 'aquellas', 'mi', 'mis', 'ti', 'su', 'sus', 'nuestro',
+        'nuestra', 'nuestros', 'nuestras', 'vuestro', 'vuestra', 'vuestros', 'vuestras'
+    ]
+
+    def __init__(self, nombre_archivo='abc_news.csv'):
         self.archivo_entrada = nombre_archivo
         self.df = None
-        self.vectorizer = TfidfVectorizer(max_features=1500, stop_words='english')
+        self.X_train = None
+        self.X_test = None
+        self.y_train = None
+        self.y_test = None
+        self.vectorizer = TfidfVectorizer(
+            max_features=1500,
+            stop_words=self.STOP_WORDS_ES,
+            ngram_range=(1, 2),  # Unigramas y bigramas
+            min_df=2  # Ignorar palabras que aparecen en menos de 2 documentos
+        )
+        self.tfidf_matrix = None
 
     def cargar_datos(self):
-        print(f" Cargando datos desde: {os.path.abspath(self.archivo_entrada)} ")
+        """Carga el CSV y elimina duplicados"""
+        print(f"📂 Cargando datos desde: {os.path.abspath(self.archivo_entrada)}")
         try:
             self.df = pd.read_csv(self.archivo_entrada, dtype=str)
             antes = len(self.df)
             self.df = self.df.drop_duplicates(subset=['titulo']).dropna(subset=['categoria'])
-            print(f"Cargados {len(self.df)} artículos únicos (Borrados {antes - len(self.df)}).")
+            print(f"✓ Cargados {len(self.df)} artículos únicos (Eliminados {antes - len(self.df)} duplicados)")
+            print(f"✓ Categorías: {self.df['categoria'].unique().tolist()}")
+            print(f"\n📊 Distribución por categoría:")
+            print(self.df['categoria'].value_counts())
         except FileNotFoundError:
-            print(f"Error: No se encuentra '{self.archivo_entrada}'. Asegúrate de estar en la carpeta correcta.")
+            print(f"❌ Error: No se encuentra '{self.archivo_entrada}'")
             exit()
 
-    def limpiar_texto_extremo(self, texto):
-        """Borra todo lo que no sean letras minúsculas"""
-        if pd.isna(texto) or not isinstance(texto, str): return ""
+    def limpiar_texto(self, texto):
+        """Limpia el texto: lowercase, quita URLs, caracteres especiales"""
+        if pd.isna(texto) or not isinstance(texto, str):
+            return ""
+
+        # Lowercase
         texto = texto.lower()
-        # reemplaza cualquier símbolo o número por un espacio
-        texto = re.sub(r'[^a-z\s]', ' ', texto)
-        return " ".join(texto.split())
+
+        # Quitar URLs
+        texto = re.sub(r'http\S+|www\.\S+', '', texto)
+
+        # Quitar emails
+        texto = re.sub(r'\S+@\S+', '', texto)
+
+        # Quitar números
+        texto = re.sub(r'\d+', '', texto)
+
+        # Quitar caracteres especiales (mantener letras españolas y espacios)
+        texto = re.sub(r'[^a-záéíóúñü\s]', ' ', texto)
+
+        # Quitar espacios múltiples
+        texto = " ".join(texto.split())
+
+        return texto
 
     def ejecutar_limpieza(self):
-        print(" Procesando texto para la columna de IA ")
-        # Unimos título y descripción y limpiamos
-        cuerpo = self.df['titulo'].fillna('') + " " + self.df['descripcion'].fillna('')
-        self.df['texto_final'] = cuerpo.apply(self.limpiar_texto_extremo)
-        # creamos el nuevo csv limpio 
-        self.df.to_csv('bbc_news_limpio.csv', index=False, encoding='utf-8')
-        print("Bien hecho, 'bbc_news_limpio.csv' generado correctamente.")
+        """Combina título + descripción y limpia el texto"""
+        print("\n🧹 Limpiando texto...")
+
+        # Combinar título + descripción
+        self.df['texto_completo'] = (
+            self.df['titulo'].fillna('') + " " +
+            self.df['descripcion'].fillna('')
+        )
+
+        # Aplicar limpieza
+        self.df['texto_limpio'] = self.df['texto_completo'].apply(self.limpiar_texto)
+
+        # Eliminar textos vacíos o muy cortos
+        antes = len(self.df)
+        self.df = self.df[self.df['texto_limpio'].str.len() > 10]
+        print(f"✓ Texto limpiado (Eliminados {antes - len(self.df)} artículos con texto muy corto)")
+
+        # Guardar CSV limpio
+        self.df.to_csv('abc_news_limpio.csv', index=False, encoding='utf-8')
+        print(f"✓ CSV limpio guardado: 'abc_news_limpio.csv'")
+
+    def aplicar_tfidf(self):
+        """Convierte cada artículo en un vector de números usando TF-IDF"""
+        print("\n🔢 Aplicando TF-IDF...")
+
+        # Ajustar y transformar
+        self.tfidf_matrix = self.vectorizer.fit_transform(self.df['texto_limpio'])
+
+        print(f"✓ TF-IDF aplicado")
+        print(f"  - Shape de la matriz: {self.tfidf_matrix.shape}")
+        print(f"  - {self.tfidf_matrix.shape[0]} documentos")
+        print(f"  - {self.tfidf_matrix.shape[1]} features (palabras/bigramas únicos)")
+        print(f"  - Vocabulario total: {len(self.vectorizer.vocabulary_)} términos")
+
+    def dividir_train_test(self, test_size=0.2, random_state=42):
+        """Divide los datos en 80% entrenamiento y 20% prueba"""
+        print(f"\n✂️ Dividiendo datos en Train/Test ({int((1-test_size)*100)}% / {int(test_size*100)}%)...")
+
+        X = self.tfidf_matrix
+        y = self.df['categoria'].values
+
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
+            X, y,
+            test_size=test_size,
+            random_state=random_state,
+            stratify=y  # Mantiene las proporciones de categorías
+        )
+
+        print(f"✓ División completada:")
+        print(f"  - Train: {self.X_train.shape[0]} artículos")
+        print(f"  - Test: {self.X_test.shape[0]} artículos")
+
+        # Mostrar distribución por categoría
+        print(f"\n📊 Distribución en Train:")
+        unique, counts = np.unique(self.y_train, return_counts=True)
+        for cat, count in zip(unique, counts):
+            print(f"  - {cat}: {count}")
+
+        print(f"\n📊 Distribución en Test:")
+        unique, counts = np.unique(self.y_test, return_counts=True)
+        for cat, count in zip(unique, counts):
+            print(f"  - {cat}: {count}")
+
+    def palabras_importantes_por_categoria(self, top_n=15):
+        """BONUS: Muestra las palabras más importantes de cada categoría"""
+        print(f"\n⭐ Top {top_n} palabras más importantes por categoría:")
+        print("="*80)
+
+        feature_names = np.array(self.vectorizer.get_feature_names_out())
+
+        for categoria in sorted(self.df['categoria'].unique()):
+            print(f"\n🔹 {categoria.upper()}:")
+
+            # Filtrar artículos de esta categoría
+            indices = self.df[self.df['categoria'] == categoria].index
+
+            # Sumar TF-IDF de todos los documentos de esta categoría
+            categoria_tfidf = self.tfidf_matrix[indices].sum(axis=0).A1
+
+            # Obtener las top N palabras
+            top_indices = categoria_tfidf.argsort()[-top_n:][::-1]
+            top_palabras = feature_names[top_indices]
+            top_scores = categoria_tfidf[top_indices]
+
+            for i, (palabra, score) in enumerate(zip(top_palabras, top_scores), 1):
+                print(f"   {i:2d}. {palabra:25s} (score: {score:.2f})")
 
     def analizar_estadisticas(self):
-        print("\n Estadísticas Numpy ")
-        palabras = self.df['titulo'].fillna('').apply(lambda x: len(x.split())).to_numpy()
-        print(f"Media de palabras: {np.mean(palabras):.2f} | Desviación: {np.std(palabras):.2f}")
+        """Muestra estadísticas básicas del dataset"""
+        print("\n📊 Estadísticas del dataset:")
+
+        # Palabras por título
+        palabras_titulo = self.df['titulo'].fillna('').apply(lambda x: len(x.split())).to_numpy()
+        print(f"\nPalabras por título:")
+        print(f"  - Media: {np.mean(palabras_titulo):.2f}")
+        print(f"  - Desviación estándar: {np.std(palabras_titulo):.2f}")
+        print(f"  - Min: {np.min(palabras_titulo)}")
+        print(f"  - Max: {np.max(palabras_titulo)}")
+
+        # Palabras por texto limpio
+        palabras_texto = self.df['texto_limpio'].apply(lambda x: len(x.split())).to_numpy()
+        print(f"\nPalabras por texto limpio (título + descripción):")
+        print(f"  - Media: {np.mean(palabras_texto):.2f}")
+        print(f"  - Desviación estándar: {np.std(palabras_texto):.2f}")
+        print(f"  - Min: {np.min(palabras_texto)}")
+        print(f"  - Max: {np.max(palabras_texto)}")
 
     def generar_grafico(self):
-        print("\nGenerando Gráfico Matplotlib ")
+        """Genera gráfico de distribución por categoría"""
+        print("\n📈 Generando gráfico...")
+
         counts = self.df['categoria'].value_counts()
+
         plt.figure(figsize=(10, 6))
-        counts.plot(kind='bar', color='firebrick', edgecolor='black')
-        plt.title('Noticias por Categoría')
+        counts.plot(kind='bar', color='steelblue', edgecolor='black')
+        plt.title('Distribución de Artículos por Categoría', fontsize=14, fontweight='bold')
+        plt.xlabel('Categoría', fontsize=12)
+        plt.ylabel('Número de Artículos', fontsize=12)
+        plt.xticks(rotation=45, ha='right')
         plt.tight_layout()
-        plt.savefig('grafico_categorias.png')
-        print("Gráfico guardado.")
+        plt.savefig('grafico_categorias.png', dpi=300)
+        print("✓ Gráfico guardado: 'grafico_categorias.png'")
+
+    def ejecutar_pipeline_completo(self):
+        """Ejecuta el pipeline completo de preprocesamiento"""
+        print("="*80)
+        print("🚀 INICIANDO PIPELINE DE PREPROCESAMIENTO")
+        print("="*80)
+
+        self.cargar_datos()
+        self.ejecutar_limpieza()
+        self.aplicar_tfidf()
+        self.dividir_train_test()
+        self.palabras_importantes_por_categoria(top_n=15)
+        self.analizar_estadisticas()
+        self.generar_grafico()
+
+        print("\n" + "="*80)
+        print("✅ PIPELINE COMPLETADO EXITOSAMENTE")
+        print("="*80)
+        print(f"\n📁 Archivos generados:")
+        print(f"  - abc_news_limpio.csv")
+        print(f"  - grafico_categorias.png")
+        print(f"\n💾 Datos listos para entrenamiento:")
+        print(f"  - X_train: {self.X_train.shape}")
+        print(f"  - X_test: {self.X_test.shape}")
+        print(f"  - y_train: {self.y_train.shape}")
+        print(f"  - y_test: {self.y_test.shape}")
+
 
 if __name__ == "__main__":
-    pre = PreprocesadorNoticias()
-    pre.cargar_datos()
-    pre.analizar_estadisticas()
-    pre.ejecutar_limpieza()
-    pre.generar_grafico()
+    # Crear instancia y ejecutar pipeline completo
+    prep = PreprocesadorNoticias('abc_news.csv')
+    prep.ejecutar_pipeline_completo()
