@@ -9,24 +9,42 @@ from sklearn.model_selection import train_test_split
 class PreprocesadorNoticias:
     # Lista de stop words en español (palabras comunes sin valor semántico)
     STOP_WORDS_ES = [
-        'el', 'la', 'de', 'que', 'y', 'a', 'en', 'un', 'ser', 'se', 'no', 'haber',
-        'por', 'con', 'su', 'para', 'como', 'estar', 'tener', 'le', 'lo', 'todo',
-        'pero', 'más', 'hacer', 'o', 'poder', 'decir', 'este', 'ir', 'otro', 'ese',
-        'si', 'me', 'ya', 'ver', 'porque', 'dar', 'cuando', 'muy', 'sin', 'vez',
-        'mucho', 'saber', 'qué', 'sobre', 'mi', 'alguno', 'mismo', 'yo', 'también',
-        'hasta', 'año', 'dos', 'querer', 'entre', 'así', 'desde', 'grande', 'eso',
-        'ni', 'nos', 'llegar', 'pasar', 'tiempo', 'ella', 'sí', 'día', 'uno', 'bien',
-        'poco', 'deber', 'entonces', 'poner', 'cosa', 'tanto', 'hombre', 'parecer',
-        'tan', 'donde', 'ahora', 'parte', 'después', 'vida', 'quedar', 'siempre',
-        'creer', 'hablar', 'llevar', 'dejar', 'nada', 'cada', 'seguir', 'menos',
-        'nuevo', 'encontrar', 'algo', 'solo', 'estos', 'trabajar', 'cual', 'tres',
-        'tal', 'ha', 'han', 'las', 'los', 'una', 'unos', 'unas', 'al', 'del', 'son',
-        'es', 'fue', 'fueron', 'era', 'eran', 'siendo', 'sido', 'está', 'están',
-        'estaba', 'estaban', 'he', 'has', 'hemos', 'había', 'habían', 'te', 'tu', 'tus',
-        'ese', 'esa', 'esos', 'esas', 'este', 'esta', 'estos', 'estas', 'aquel',
-        'aquella', 'aquellos', 'aquellas', 'mi', 'mis', 'ti', 'su', 'sus', 'nuestro',
-        'nuestra', 'nuestros', 'nuestras', 'vuestro', 'vuestra', 'vuestros', 'vuestras'
-    ]
+    'el', 'la', 'de', 'que', 'y', 'a', 'en', 'un', 'ser', 'se', 'no', 'haber',
+    'por', 'con', 'su', 'para', 'como', 'estar', 'tener', 'le', 'lo', 'todo',
+    'pero', 'más', 'hacer', 'o', 'poder', 'decir', 'este', 'ir', 'otro', 'ese',
+    'si', 'me', 'ya', 'ver', 'porque', 'dar', 'cuando', 'muy', 'sin', 'vez',
+    'mucho', 'saber', 'qué', 'sobre', 'mi', 'alguno', 'mismo', 'yo', 'también',
+    'hasta', 'año', 'dos', 'querer', 'entre', 'así', 'desde', 'grande', 'eso',
+    'ni', 'nos', 'llegar', 'pasar', 'tiempo', 'ella', 'sí', 'día', 'uno', 'bien',
+    'poco', 'deber', 'entonces', 'poner', 'cosa', 'tanto', 'hombre', 'parecer',
+    'tan', 'donde', 'ahora', 'parte', 'después', 'vida', 'quedar', 'siempre',
+    'creer', 'hablar', 'llevar', 'dejar', 'nada', 'cada', 'seguir', 'menos',
+    'nuevo', 'encontrar', 'algo', 'solo', 'estos', 'trabajar', 'cual', 'tres',
+    'tal', 'ha', 'han', 'las', 'los', 'una', 'unos', 'unas', 'al', 'del', 'son',
+    'es', 'fue', 'fueron', 'era', 'eran', 'siendo', 'sido', 'está', 'están',
+    'estaba', 'estaban', 'he', 'has', 'hemos', 'había', 'habían', 'te', 'tu', 'tus',
+    'ese', 'esa', 'esos', 'esas', 'este', 'esta', 'estos', 'estas', 'aquel',
+    'aquella', 'aquellos', 'aquellas', 'mi', 'mis', 'ti', 'su', 'sus', 'nuestro',
+    'nuestra', 'nuestros', 'nuestras', 'vuestro', 'vuestra', 'vuestros', 'vuestras',
+    'ante', 'bajo', 'cabe', 'contra', 'durante', 'mediante', 'salvo', 'según', 'excepto',
+    'hacia', 'tras', 'dentro', 'fuera', 'encima', 'debajo', 'delante', 'detrás',
+    'quien', 'quienes', 'cuyo', 'cuya', 'cuyos', 'cuyas', 'cuanto', 'cuanta', 'cuantos', 'cuantas',
+    'cual', 'cuales', 'cómo', 'dónde', 'cuándo', 'cuánto', 'cuánta', 'cuántos', 'cuántas',
+    'ambos', 'ambas', 'varios', 'varias', 'muchos', 'muchas', 'pocos', 'pocas',
+    'otros', 'otras', 'algunos', 'algunas', 'ninguno', 'ninguna', 'ningunos', 'ningunas',
+    'todavía', 'aún', 'apenas', 'casi', 'solo', 'solamente', 'tampoco', 'todavía',
+    'mientras', 'aunque', 'sino', 'mas', 'pues', 'luego', 'conque',
+    'allí', 'allá', 'acá', 'aquí', 'ahí', 'arriba', 'abajo', 'cerca', 'lejos',
+    'siempre', 'nunca', 'jamás', 'todavía', 'aún', 'pronto', 'tarde', 'temprano',
+    'hoy', 'ayer', 'mañana', 'anoche', 'anteanoche', 'anteayer',
+    'primero', 'segundo', 'tercero', 'último', 'anterior', 'siguiente', 'próximo',
+    'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez', 'cien', 'mil',
+    'puede', 'pueden', 'podría', 'podrían', 'debe', 'deben', 'debería', 'deberían',
+    'hace', 'hacen', 'hizo', 'hicieron', 'hará', 'harán', 'haría', 'harían',
+    'dice', 'dicen', 'dijo', 'dijeron', 'dirá', 'dirán', 'diría', 'dirían',
+    'va', 'van', 'voy', 'vas', 'vamos', 'vais', 'iba', 'iban', 'irá', 'irán',
+    'sea', 'sean', 'soy', 'eres', 'somos', 'sois', 'seré', 'serás', 'será', 'serán'
+]
 
     def __init__(self, nombre_archivo='abc_news.csv'):
         self.archivo_entrada = nombre_archivo
@@ -65,12 +83,6 @@ class PreprocesadorNoticias:
 
         # Lowercase
         texto = texto.lower()
-
-        # Quitar URLs
-        texto = re.sub(r'http\S+|www\.\S+', '', texto)
-
-        # Quitar emails
-        texto = re.sub(r'\S+@\S+', '', texto)
 
         # Quitar números
         texto = re.sub(r'\d+', '', texto)
