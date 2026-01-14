@@ -237,7 +237,7 @@ class PreprocesadorNoticias:
         for cat, count in zip(unique, counts):
             print(f"  - {cat}: {count}")
 
-    def palabras_importantes_por_categoria(self, top_n=15):
+    def palabras_importantes_por_categoria(self, top_n=20):
         """BONUS: Muestra las palabras más importantes de cada categoría"""
         print(f"\n⭐ Top {top_n} palabras más importantes por categoría:")
         print("="*80)
@@ -307,7 +307,7 @@ class PreprocesadorNoticias:
         self.ejecutar_limpieza()
         self.aplicar_tfidf()
         self.dividir_train_test()
-        self.palabras_importantes_por_categoria(top_n=15)
+        self.palabras_importantes_por_categoria(20)
         self.analizar_estadisticas()
         self.generar_grafico()
 

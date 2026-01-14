@@ -1,3 +1,3 @@
 Modelo,Train Acc,Test Acc,Precision,Recall,F1-Score,Tiempo (s)
-Random Forest,0.9941,0.7176,0.7667,0.7176,0.7222,0.10
-Logistic Regression,0.9912,0.8353,0.8570,0.8353,0.8382,0.01
+Random Forest,0.9969,0.8098,0.8335,0.8098,0.8116,0.12
+Logistic Regression,0.9846,0.8896,0.8914,0.8896,0.8898,0.01
