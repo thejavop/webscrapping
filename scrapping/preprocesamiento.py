@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import re
 import os
+import unicodedata
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import train_test_split
 
@@ -47,7 +48,7 @@ class PreprocesadorNoticias:
     'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo','enero',
     'febrero', 'marzo', 'abril', 'mayo', 'junio','julio', 'agosto', 'septiembre', 'octubre', 
     'noviembre', 'diciembre','ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 
-    'oct', 'nov', 'dic','efe','abc','ee', 'uu'  # ← Añadido ee y uu por si se escapan
+    'oct', 'nov', 'dic','efe','abc','ee', 'uu'
 ]
 
     def __init__(self, nombre_archivo='abc_news.csv'):
@@ -60,8 +61,8 @@ class PreprocesadorNoticias:
         self.vectorizer = TfidfVectorizer(
             max_features=1500,
             stop_words=self.STOP_WORDS_ES,
-            ngram_range=(1, 2),  # Unigramas y bigramas
-            min_df=2  # Ignorar palabras que aparecen en menos de 2 documentos
+            ngram_range=(1, 2),
+            min_df=2
         )
         self.tfidf_matrix = None
 
@@ -70,9 +71,7 @@ class PreprocesadorNoticias:
         print(f"📂 Cargando datos desde: {os.path.abspath(self.archivo_entrada)}")
         try:
             self.df = pd.read_csv(self.archivo_entrada)
-            antes = len(self.df)
-            self.df = self.df.drop_duplicates(subset=['titulo']).dropna(subset=['categoria'])
-            print(f"✓ Cargados {len(self.df)} artículos únicos (Eliminados {antes - len(self.df)} duplicados)")
+            print(f"✓ Cargados {len(self.df)} artículos únicos.")
             print(f"✓ Categorías: {self.df['categoria'].unique().tolist()}")
             print(f"\n📊 Distribución por categoría:")
             print(self.df['categoria'].value_counts())
@@ -80,65 +79,87 @@ class PreprocesadorNoticias:
             print(f"❌ Error: No se encuentra '{self.archivo_entrada}'")
             exit()
 
+    def eliminar_tildes(self, texto):
+        """Elimina tildes y acentos de un texto"""
+        # Normalizar a NFD (descompone caracteres con tilde)
+        # Ejemplo: á → a + ´
+        texto_nfd = unicodedata.normalize('NFD', texto)
+        
+        # Filtrar solo caracteres que NO sean marcas de acento
+        # Mantiene letras, números, espacios, pero quita las tildes
+        texto_sin_tildes = ''.join(
+            char for char in texto_nfd
+            if unicodedata.category(char) != 'Mn'  # Mn = Mark, Nonspacing (tildes)
+        )
+        
+        return texto_sin_tildes
+
     def limpiar_texto(self, texto):
-        """Limpia el texto: lowercase, normaliza abreviaturas, quita números y caracteres especiales"""
+        """Limpia el texto: lowercase, normaliza abreviaturas, quita números, caracteres especiales, tildes y stopwords"""
         if pd.isna(texto) or not isinstance(texto, str):
             return ""
 
         # Lowercase
         texto = texto.lower()
         
-        # ← NUEVO: Normalizar abreviaturas comunes ANTES de limpiar caracteres especiales
-        # Esto convierte "EE.UU." → "estadosunidos" (una sola palabra)
-        # IMPORTANTE: El orden importa - patrones más específicos primero
+        # Normalizar abreviaturas comunes ANTES de limpiar caracteres especiales
         abreviaturas = {
             # Estados Unidos (todas las variantes)
-            r'\bee\.?\s?uu\.?\b': 'estadosunidos',           # EE.UU., ee.uu., EEUU
-            r'\buu\.?\s?ee\.?\b': 'estadosunidos',           # UU.EE.
-            r'\bestados\s+unidos(?:\s+de\s+am[eé]rica)?\b': 'estadosunidos',  # Estados Unidos (de América)
+            r'\bee\.?\s?uu\.?\b': 'estadosunidos',
+            r'\buu\.?\s?ee\.?\b': 'estadosunidos',
+            r'\bestados\s+unidos(?:\s+de\s+am[eé]rica)?\b': 'estadosunidos',
             
             # Recursos Humanos
-            r'\brr\.?\s?hh\.?\b': 'recursoshumanos',         # RR.HH.
-            r'\brecursos\s+humanos\b': 'recursoshumanos',    # Recursos Humanos
+            r'\brr\.?\s?hh\.?\b': 'recursoshumanos',
+            r'\brecursos\s+humanos\b': 'recursoshumanos',
             
             # Unión Europea
-            r'\bunion\s+europea\b': 'unioneuropea',          # Unión Europea
-            r'\bue\b': 'unioneuropea',                       # UE
-            r'\bpresos\s+pol[ií]ticos\b': 'presospoliticos', # Presos políticos
-            r'\bderechos\s+humanos\b': 'derechoshumanos',    # Derechos humanos
-            r'\bcambio\s+clim[aá]tico\b': 'cambioclimatico', # Cambio climático
-            r'\binteligencia\s+artificial\b': 'inteligenciaartificial', # Inteligencia artificial
-
-
+            r'\bunion\s+europea\b': 'unioneuropea',
+            r'\bue\b': 'unioneuropea',
+            
+            # Términos políticos/sociales
+            r'\bpresos\s+pol[ií]ticos\b': 'presospoliticos',
+            r'\bderechos\s+humanos\b': 'derechoshumanos',
+            r'\bcambio\s+clim[aá]tico\b': 'cambioclimatico',
+            r'\binteligencia\s+artificial\b': 'inteligenciaartificial',
+            
             # Organizaciones internacionales
-            r'\bnaciones\s+unidas\b': 'nacionesunidas',      # Naciones Unidas
-            r'\bonu\b': 'nacionesunidas',                    # ONU
-            r'\botan\b': 'otan',                             # OTAN
-            r'\bfmi\b': 'fmi',                               # FMI
+            r'\bnaciones\s+unidas\b': 'nacionesunidas',
+            r'\bonu\b': 'nacionesunidas',
+            r'\botan\b': 'otan',
+            r'\bfmi\b': 'fmi',
             
             # Países compuestos
-            r'\breino\s+unido\b': 'reinounido',              # Reino Unido
-            r'\barabia\s+saud[ií]\b': 'arabiasaudi',         # Arabia Saudí
-            r'\bcorea\s+del\s+sur\b': 'coreadelsur',         # Corea del Sur
-            r'\bcorea\s+del\s+norte\b': 'coreadelnorte',     # Corea del Norte
-            r'\bnueva\s+zelanda\b': 'nuevazelanda',          # Nueva Zelanda
+            r'\breino\s+unido\b': 'reinounido',
+            r'\barabia\s+saud[ií]\b': 'arabiasaudi',
+            r'\bcorea\s+del\s+sur\b': 'coreadelsur',
+            r'\bcorea\s+del\s+norte\b': 'coreadelnorte',
+            r'\bnueva\s+zelanda\b': 'nuevazelanda',
             
             # Términos económicos
-            r'\bpib\b': 'pib',                               # PIB
-            r'\biva\b': 'iva',                               # IVA
+            r'\bpib\b': 'pib',
+            r'\biva\b': 'iva',
         }
         
         for patron, reemplazo in abreviaturas.items():
             texto = re.sub(patron, reemplazo, texto)
 
+        # ← NUEVO: Eliminar tildes ANTES de quitar caracteres especiales
+        texto = self.eliminar_tildes(texto)
+
         # Quitar números
         texto = re.sub(r'\d+', '', texto)
 
-        # Quitar caracteres especiales (mantener letras españolas y espacios)
-        texto = re.sub(r'[^a-záéíóúñü\s]', ' ', texto)
+        # Quitar caracteres especiales (mantener solo letras sin tilde y espacios)
+        texto = re.sub(r'[^a-zn\s]', ' ', texto)  # Solo a-z y ñ
 
         # Quitar espacios múltiples
         texto = " ".join(texto.split())
+
+        # Eliminar stopwords (también sin tildes)
+        palabras = texto.split()
+        palabras_filtradas = [p for p in palabras if p not in self.STOP_WORDS_ES]
+        texto = " ".join(palabras_filtradas)
 
         return texto
 
@@ -159,14 +180,19 @@ class PreprocesadorNoticias:
         antes = len(self.df)
         self.df = self.df[self.df['texto_limpio'].str.len() > 10]
         
-        # ← NUEVO: Reset de índices para evitar desincronización con tfidf_matrix
+        # Reset de índices para evitar desincronización con tfidf_matrix
         self.df = self.df.reset_index(drop=True)
         
         print(f"✓ Texto limpiado (Eliminados {antes - len(self.df)} artículos con texto muy corto)")
+        
+        # Mostrar ejemplos de antes/después
+        print(f"\n📝 Ejemplo de limpieza:")
+        print(f"  ANTES: {self.df['texto_completo'].iloc[0][:100]}...")
+        print(f"  DESPUÉS: {self.df['texto_limpio'].iloc[0][:100]}...")
 
         # Guardar CSV limpio
         self.df.to_csv('abc_news_limpio.csv', index=False, encoding='utf-8')
-        print(f"✓ CSV limpio guardado: 'abc_news_limpio.csv'")
+        print(f"\n✓ CSV limpio guardado: 'abc_news_limpio.csv'")
 
     def aplicar_tfidf(self):
         """Convierte cada artículo en un vector de números usando TF-IDF"""
@@ -192,7 +218,7 @@ class PreprocesadorNoticias:
             X, y,
             test_size=test_size,
             random_state=random_state,
-            stratify=y  # Mantiene las proporciones de categorías
+            stratify=y
         )
 
         print(f"✓ División completada:")
