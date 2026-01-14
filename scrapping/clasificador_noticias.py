@@ -91,74 +91,71 @@ class ClasificadorNoticias:
         return self.df
 
     def aplicar_tfidf_y_dividir(self, test_size=0.2, random_state=42):
-        """
-        Aplica TF-IDF y divide en train/test
-        
-        Args:
-            test_size: Proporción del conjunto de test (default 0.2 = 20%)
-            random_state: Semilla para reproducibilidad
-        """
+
         print("\n" + "="*80)
         print("🔢 APLICANDO TF-IDF Y DIVIDIENDO DATOS")
         print("="*80)
-        
+
         from sklearn.model_selection import train_test_split
-        
-        # Lista de stop words en español (misma que en preprocesamiento.py)
-        STOP_WORDS_ES = [
-            'el', 'la', 'de', 'que', 'y', 'a', 'en', 'un', 'ser', 'se', 'no', 'haber',
-            'por', 'con', 'su', 'para', 'como', 'estar', 'tener', 'le', 'lo', 'todo',
-            'pero', 'más', 'hacer', 'o', 'poder', 'decir', 'este', 'ir', 'otro', 'ese',
-            'si', 'me', 'ya', 'ver', 'porque', 'dar', 'cuando', 'muy', 'sin', 'vez',
-            'mucho', 'saber', 'qué', 'sobre', 'mi', 'alguno', 'mismo', 'yo', 'también',
-            'hasta', 'año', 'dos', 'querer', 'entre', 'así', 'desde', 'grande', 'eso',
-            'ni', 'nos', 'llegar', 'pasar', 'tiempo', 'ella', 'sí', 'día', 'uno', 'bien'
-        ]
-        
-        # Crear vectorizer TF-IDF
+
+        # ================================
+        # SELECCIÓN EXPLÍCITA DE COLUMNAS
+        # ================================
+        X_texto = self.df.iloc[:, -2]   # texto_limpio
+        y = self.df.iloc[:, -1].values  # categoria
+        indices = self.df.index.values
+
+        print("\n📌 Columnas usadas:")
+        print(f"   - Texto (X): {self.df.columns[-2]}")
+        print(f"   - Etiqueta (y): {self.df.columns[-1]}")
+
+        # ================================
+        # TF-IDF (SIN LIMPIEZA ADICIONAL)
+        # ================================
         print("\n⚙️  Configurando TF-IDF Vectorizer:")
         print("   - max_features: 1500")
-        print("   - ngram_range: (1, 2) - unigramas y bigramas")
-        print("   - min_df: 2 - mínimo 2 documentos por término")
-        
+        print("   - ngram_range: (1, 2)")
+        print("   - min_df: 2")
+        print("   - stop_words: None (ya preprocesado)")
+
         self.vectorizer = TfidfVectorizer(
             max_features=1500,
-            stop_words=STOP_WORDS_ES,
             ngram_range=(1, 2),
             min_df=2
         )
-        
-        # Aplicar TF-IDF
+
         print("\n⏳ Transformando textos a vectores TF-IDF...")
-        X = self.vectorizer.fit_transform(self.df['texto_limpio'])
-        y = self.df['categoria'].values
-        indices = self.df.index.values  # Guardar índices originales
-        
+        X = self.vectorizer.fit_transform(X_texto)
+
         print(f"✅ TF-IDF aplicado")
         print(f"   - Matriz shape: {X.shape}")
-        print(f"   - {X.shape[0]} documentos")
-        print(f"   - {X.shape[1]} features (términos únicos)")
-        
-        # Dividir en train/test (incluyendo índices)
+
+        # ================================
+        # TRAIN / TEST SPLIT
+        # ================================
         print(f"\n✂️  Dividiendo datos ({int((1-test_size)*100)}% train / {int(test_size*100)}% test)...")
-        
+
         self.X_train, self.X_test, self.y_train, self.y_test, self.indices_train, self.indices_test = train_test_split(
-            X, y, indices,
+            X,
+            y,
+            indices,
             test_size=test_size,
             random_state=random_state,
-            stratify=y  # Mantiene proporciones
+            stratify=y
         )
-        
+
         self.categorias = sorted(np.unique(self.y_train))
-        
+
         print(f"✅ División completada:")
         print(f"   - Train: {self.X_train.shape[0]} artículos")
         print(f"   - Test:  {self.X_test.shape[0]} artículos")
-        
+
         print(f"\n📊 Distribución en Train:")
         unique, counts = np.unique(self.y_train, return_counts=True)
         for cat, count in zip(unique, counts):
             print(f"   - {cat}: {count}")
+
+
 
     # ------------------------------------------------------------------
     # ENTRENAMIENTO
