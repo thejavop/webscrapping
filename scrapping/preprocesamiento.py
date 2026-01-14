@@ -108,6 +108,7 @@ class PreprocesadorNoticias:
             r'\bee\.?\s?uu\.?\b': 'estadosunidos',
             r'\buu\.?\s?ee\.?\b': 'estadosunidos',
             r'\bestados\s+unidos(?:\s+de\s+am[eé]rica)?\b': 'estadosunidos',
+             r'\busa\b': 'estadosunidos',
             
             # Recursos Humanos
             r'\brr\.?\s?hh\.?\b': 'recursoshumanos',
