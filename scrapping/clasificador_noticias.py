@@ -70,20 +70,18 @@ class ClasificadorNoticias:
                 f"❌ No se encuentra '{archivo_csv}'.\n"
                 f"   Debes ejecutar primero 'preprocesamiento.py' para generar el CSV limpio."
             )
-        
-        print(f"\n📄 Cargando: {os.path.abspath(archivo_csv)}")
         self.df = pd.read_csv(archivo_csv)
         
         print(f"✅ CSV cargado: {len(self.df)} artículos")
         print(f"   Categorías encontradas: {self.df['categoria'].unique().tolist()}")
         
         # Verificar columnas necesarias
-        columnas_requeridas = ['texto_limpio', 'categoria']
-        if not all(col in self.df.columns for col in columnas_requeridas):
-            raise ValueError(
-                f"❌ El CSV debe contener las columnas: {columnas_requeridas}\n"
-                f"   Columnas encontradas: {self.df.columns.tolist()}"
-            )
+        posibles_columnas_texto = ['texto_limpio', 'descripcion', 'texto_completo', 'titulo']
+        self.columna_texto = next((col for col in posibles_columnas_texto if col in self.df.columns), None)
+        if not self.columna_texto:
+            raise ValueError(f"No se encontró ninguna columna de texto válida en el CSV. Columnas: {self.df.columns.tolist()}")
+    
+        print(f"📝 Columna de texto usada para TF-IDF: {self.columna_texto}")
         
         print(f"\n📊 Distribución por categoría:")
         print(self.df['categoria'].value_counts())
@@ -101,9 +99,13 @@ class ClasificadorNoticias:
         # ================================
         # SELECCIÓN EXPLÍCITA DE COLUMNAS
         # ================================
-        X_texto = self.df.iloc[:, -2]   # texto_limpio
-        y = self.df.iloc[:, -1].values  # categoria
+        X_texto = self.df[self.columna_texto]
+        y = self.df['categoria'].values
         indices = self.df.index.values
+        print("\n🧪 Comprobación de clases:")
+        print(pd.Series(y).value_counts())
+
+
 
         print("\n📌 Columnas usadas:")
         print(f"   - Texto (X): {self.df.columns[-2]}")
@@ -474,38 +476,28 @@ class ClasificadorNoticias:
     # ANÁLISIS TF-IDF
     # ------------------------------------------------------------------
     def palabras_importantes_por_categoria(self, top_n=15):
-        """Muestra las palabras más importantes de cada categoría"""
-        print(f"\n{'='*80}")
-        print(f"⭐ TOP {top_n} PALABRAS MÁS IMPORTANTES POR CATEGORÍA (TF-IDF)")
-        print(f"{'='*80}")
-
         feature_names = np.array(self.vectorizer.get_feature_names_out())
-        
-        # Crear matriz TF-IDF completa para análisis
-        X_full = self.vectorizer.transform(self.df['texto_limpio'])
+    
+        # Usar la columna de texto detectada
+        X_full = self.vectorizer.transform(self.df[self.columna_texto])
         y_full = self.df['categoria'].values
 
         for categoria in sorted(np.unique(y_full)):
             print(f"\n🔹 {categoria.upper()}:")
-
-            # Filtrar artículos de esta categoría
             indices = np.where(y_full == categoria)[0]
-
-            # Sumar TF-IDF de todos los documentos de esta categoría
             categoria_tfidf = X_full[indices].sum(axis=0).A1
-
-            # Obtener las top N palabras
             top_indices = categoria_tfidf.argsort()[-top_n:][::-1]
             top_palabras = feature_names[top_indices]
             top_scores = categoria_tfidf[top_indices]
-
             for i, (palabra, score) in enumerate(zip(top_palabras, top_scores), 1):
                 print(f"   {i:2d}. {palabra:30s} (score: {score:.2f})")
+
+
 
     def visualizar_palabras_importantes(self, top_n=10, guardar=True):
         """Genera gráfico de barras con las palabras más importantes por categoría"""
         feature_names = np.array(self.vectorizer.get_feature_names_out())
-        X_full = self.vectorizer.transform(self.df['texto_limpio'])
+        X_full = self.vectorizer.transform(self.df[self.columna_texto])
         y_full = self.df['categoria'].values
         
         categorias_unicas = sorted(np.unique(y_full))
