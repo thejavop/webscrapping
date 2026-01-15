@@ -2,7 +2,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.webdriver.chrome.service import Service
 import pandas as pd
 import time
 
@@ -25,7 +25,7 @@ class ABCNewsScraper:
         options.page_load_strategy = 'none'  # No espera nada, carga inmediato
 
         # Configurar el servicio de ChromeDriver con timeout
-        from selenium.webdriver.chrome.service import Service
+
         service = Service()
         
         self.driver = webdriver.Chrome(options=options, service=service)
@@ -63,7 +63,6 @@ class ABCNewsScraper:
                     )
                     boton_cookies.click()
                     print("✓ Cookies aceptadas")
-                    time.sleep(1)
                     return
                 except:
                     continue
@@ -77,7 +76,7 @@ class ABCNewsScraper:
         print(f"Haciendo scroll ({scrolls} veces)...")
         for i in range(scrolls):
             self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(0.5)
+            time.sleep(0.1)
             print(f"   Scroll {i+1}/{scrolls}")
     
     def extraer_articulos(self, max_articulos=200):
@@ -204,7 +203,7 @@ class ABCNewsScraper:
                 try:
                     self.driver.get(url)
                     # Con page_load_strategy='none', cargamos y esperamos un poco
-                    time.sleep(3)  # Dar tiempo a que cargue el contenido básico
+                    time.sleep(2)  # Dar tiempo a que cargue el contenido básico
                 except Exception as timeout_error:
                     if intento == max_intentos - 1:
                         print(f"   ✗ Timeout después de {max_intentos} intentos")
@@ -298,7 +297,7 @@ class ABCNewsScraper:
 
         articulos_categoria = []
         pagina = 1
-        max_paginas = 13
+        max_paginas = 30
 
         try:
             while len(articulos_categoria) < max_articulos and pagina <= max_paginas:
@@ -309,20 +308,17 @@ class ABCNewsScraper:
 
                 if pagina == 1:
                     self.driver.get(url)
-                    time.sleep(1)
+                    time.sleep(0.2)
                     
                     if len(self.noticias) == 0:
                         self.aceptar_cookies()
 
-                self.scroll_pagina(scrolls=10)
+                self.scroll_pagina(scrolls=5)
 
-                articulos = self.extraer_articulos(max_articulos - len(articulos_categoria))
+                articulos = self.extraer_articulos(max_articulos)
                 
                 print(f"\n>>> Extraídos de la página: {len(articulos)} artículos")
                 
-                print("\n📰 PRIMEROS 3 TÍTULOS:")
-                for i, art in enumerate(articulos[:3], 1):
-                    print(f"   {i}. {art['titulo'][:80]}...")
 
                 nuevos = 0
                 duplicados = 0
@@ -365,7 +361,7 @@ class ABCNewsScraper:
                     ]
                     
                     self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                    time.sleep(2)
+                    time.sleep(0.5) 
                     
                     for selector in selectores_load_more:
                         try:
@@ -385,7 +381,7 @@ class ABCNewsScraper:
                     if load_more_button:
                         try:
                             self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", load_more_button)
-                            time.sleep(1)
+                            time.sleep(0.5) 
                             
                             self.driver.execute_script("arguments[0].click();", load_more_button)
                             print(f"✓ Click en 'Cargar más' ejecutado")
@@ -427,7 +423,7 @@ class ABCNewsScraper:
             print(f"Total acumulado: {len(self.noticias)} artículos")
             print(f"{'='*60}")
 
-            time.sleep(2)
+            time.sleep(0.5)
 
         except Exception as e:
             print(f"Error scrapeando {nombre_categoria}: {e}")
@@ -495,7 +491,7 @@ if __name__ == "__main__":
     scraper = ABCNewsScraper()
 
     try:
-        scraper.scrapear_todas_secciones(400)
+        scraper.scrapear_todas_secciones(max_por_categoria=500)
         df = scraper.guardar_datos('abc_news.csv')
 
         if df is not None:
