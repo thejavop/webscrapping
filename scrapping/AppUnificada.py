@@ -1,7 +1,11 @@
 import customtkinter as ctk
 from tkinter import messagebox
-import requests
-from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from clasificador_noticias import ClasificadorNoticias
 from preprocesamiento import PreprocesadorNoticias
 import threading
@@ -245,6 +249,62 @@ class ClasificadorApp:
         
         return palabras_unicas[:n_palabras] if palabras_unicas else ["texto", "noticia", "información"]
     
+    def scrape_url_selenium(self, url):
+        """Extrae SOLO el título (h1) y subtítulo/descripción (h2) usando Selenium"""
+        driver = None
+        try:
+            # Configurar opciones de Chrome para modo headless
+            chrome_options = Options()
+            chrome_options.add_argument('--headless')  # Ejecutar sin interfaz gráfica
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument('--disable-gpu')
+            chrome_options.add_argument('--window-size=1920,1080')
+            chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+            
+            # Inicializar el driver
+            driver = webdriver.Chrome(options=chrome_options)
+            
+            # Cargar la página
+            driver.get(url)
+            
+            # Esperar a que la página cargue (máximo 10 segundos)
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+            
+            # Extraer SOLO el título (h1)
+            titulo_texto = ""
+            try:
+                titulo = driver.find_element(By.TAG_NAME, "h1")
+                titulo_texto = titulo.text.strip()
+            except:
+                print("No se encontró elemento h1")
+            
+            # Extraer SOLO el subtítulo/descripción (h2)
+            descripcion = ""
+            try:
+                subtitulo = driver.find_element(By.TAG_NAME, "h2")
+                descripcion = subtitulo.text.strip()
+            except:
+                print("No se encontró elemento h2")
+            
+            # Combinar SOLO título y descripción
+            texto_completo = f"{titulo_texto} {descripcion}".strip()
+            
+            if not texto_completo:
+                raise Exception("No se pudo extraer texto de la URL (h1 y h2 no encontrados)")
+            
+            return texto_completo
+            
+        except Exception as e:
+            raise Exception(f"Error al extraer contenido con Selenium: {str(e)}")
+        
+        finally:
+            # Cerrar el navegador
+            if driver:
+                driver.quit()
+    
     def clasificar(self):
         input_text = self.text_input.get("1.0", "end").strip()
         
@@ -258,7 +318,7 @@ class ClasificadorApp:
         try:
             # Procesar
             if input_text.startswith('http'):
-                texto = self.scrape_url(input_text)
+                texto = self.scrape_url_selenium(input_text)
                 self.texto_original = texto  # Guardar texto original
                 texto_limpio = self.prep.limpiar_texto(texto)
             else:
@@ -288,19 +348,6 @@ class ClasificadorApp:
         for widget in self.resultado_frame.winfo_children():
             widget.destroy()
     
-    def scrape_url(self, url):
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(response.content, 'html.parser')
-        
-        titulo = soup.find('h1')
-        titulo_texto = titulo.get_text().strip() if titulo else ""
-        
-        subtitulo = soup.find('h2') or soup.find('p')
-        descripcion = subtitulo.get_text().strip() if subtitulo else ""
-        
-        return f"{titulo_texto} {descripcion}"
-    
     def mostrar_resultado(self, resultado):
         # Título
         titulo = ctk.CTkLabel(
@@ -310,7 +357,7 @@ class ClasificadorApp:
         )
         titulo.pack(pady=15)
         
-        # NUEVO: Mostrar texto original extraído
+        # Mostrar texto original extraído
         if self.texto_original:
             texto_frame = ctk.CTkFrame(
                 self.resultado_frame, 
@@ -371,7 +418,7 @@ class ClasificadorApp:
         )
         cat_label.pack(pady=20)
         
-        # Palabras clave (ahora siempre se muestra de forma global)
+        # Palabras clave
         if 'palabras_clave' in resultado and resultado['palabras_clave']:
             palabras_frame = ctk.CTkFrame(self.resultado_frame, fg_color="#1e293b", corner_radius=10)
             palabras_frame.pack(fill="x", padx=10, pady=(0, 20))
