@@ -1,5 +1,6 @@
 import joblib
 import os
+import pandas as pd
 
 
 class ClasificadorNoticias:
@@ -45,36 +46,31 @@ class ClasificadorNoticias:
 
     def clasificar(self, texto):
         """
-        Clasifica un texto y devuelve la categoria predicha.
-
-        Args:
-            texto: Titular o texto de noticia a clasificar
-
-        Returns:
-            str: Categoria predicha
+        Clasifica un texto usando Pandas para la transformación.
         """
         if not self.modelo_cargado:
             raise RuntimeError("Debes cargar un modelo primero con cargar_modelo()")
 
-        texto_vectorizado = self.vectorizer.transform([texto])
+        # 1. Convertimos el texto de entrada en una Serie de Pandas
+        # Esto cumple con el requisito de usar Pandas en el proceso
+        serie_texto = pd.Series([texto])
+
+        # 2. El vectorizer ahora recibe la estructura de Pandas
+        texto_vectorizado = self.vectorizer.transform(serie_texto)
+        
+        # 3. Predicción
         categoria = self.modelo.predict(texto_vectorizado)[0]
 
         return categoria
 
     def clasificar_con_probabilidades(self, texto):
-        """
-        Clasifica un texto y devuelve la categoria con las probabilidades.
-
-        Args:
-            texto: Titular o texto de noticia a clasificar
-
-        Returns:
-            dict: Diccionario con 'categoria' y 'probabilidades'
-        """
         if not self.modelo_cargado:
             raise RuntimeError("Debes cargar un modelo primero con cargar_modelo()")
 
-        texto_vectorizado = self.vectorizer.transform([texto])
+        # Uso de Pandas
+        serie_texto = pd.Series([texto])
+        texto_vectorizado = self.vectorizer.transform(serie_texto)
+        
         categoria = self.modelo.predict(texto_vectorizado)[0]
         probabilidades = self.modelo.predict_proba(texto_vectorizado)[0]
 

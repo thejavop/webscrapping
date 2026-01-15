@@ -76,19 +76,18 @@ class EntrenadorModelo:
         return self.df
 
     def aplicar_tfidf_y_dividir(self, test_size=0.2, random_state=42):
-        """Aplica TF-IDF y divide en train/test"""
+        """Aplica TF-IDF usando la última columna del DataFrame con Pandas"""
         print("\n" + "="*80)
-        print("APLICANDO TF-IDF Y DIVIDIENDO DATOS")
+        print("APLICANDO TF-IDF USANDO PANDAS (ÚLTIMA COLUMNA)")
         print("="*80)
 
-        X_texto = self.df[self.columna_texto]
+        # Usamos .iloc de Pandas para seleccionar todas las filas (:) 
+        # y la última columna (-1)
+        X_texto = self.df.iloc[:, -1].astype(str) # Forzamos a string por seguridad
         y = self.df['categoria'].values
         indices = self.df.index.values
 
-        print("\nConfigurando TF-IDF Vectorizer:")
-        print("   - max_features: 1500")
-        print("   - ngram_range: (1, 2)")
-        print("   - min_df: 2")
+        print(f"Columna seleccionada para entrenar: '{self.df.columns[-1]}'")
 
         self.vectorizer = TfidfVectorizer(
             max_features=1500,
@@ -291,6 +290,46 @@ class EntrenadorModelo:
 
         plt.close()
 
+    def visualizar_palabras_importantes(self, n_top=10, guardar=True):
+        """Genera un gráfico con las palabras más importantes por categoría usando TF-IDF"""
+        print("\n📊 Generando gráfico de palabras más importantes (TF-IDF)...")
+        
+        # Obtener los nombres de las palabras del vectorizador
+        feature_names = np.array(self.vectorizer.get_feature_names_out())
+        
+        # Preparar la figura con subplots (2x2 para tus 4 categorías)
+        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+        axes = axes.flatten()
+
+        for i, cat in enumerate(self.categorias):
+            # Filtrar las filas de la matriz X_train que pertenecen a esta categoría
+            indices_cat = np.where(self.y_train == cat)[0]
+            if len(indices_cat) == 0: continue
+            
+            # Calcular el score TF-IDF promedio para cada palabra en esta categoría
+            tfidf_cat = self.X_train[indices_cat].mean(axis=0).A1
+            
+            # Obtener los índices de las palabras con mayor score
+            top_indices = tfidf_cat.argsort()[-n_top:][::-1]
+            top_words = feature_names[top_indices]
+            top_scores = tfidf_cat[top_indices]
+
+            # Dibujar en el subplot correspondiente
+            ax = axes[i]
+            sns.barplot(x=top_scores, y=top_words, ax=ax, palette="Blues_r")
+            ax.set_title(f"Top {n_top} Palabras - {cat}", fontsize=14, fontweight='bold')
+            ax.set_xlabel("Score TF-IDF")
+            ax.grid(axis='x', linestyle='--', alpha=0.7)
+
+        plt.tight_layout()
+        
+        if guardar:
+            filename = 'palabras_importantes_tfidf.png'
+            plt.savefig(filename, dpi=300, bbox_inches='tight')
+            print(f"✓ Gráfico guardado: {filename}")
+        
+        plt.close()
+
     def guardar_modelo(self, modelo, nombre_archivo):
         """Guarda el modelo junto con el vectorizer y categorias"""
         paquete = {
@@ -330,6 +369,7 @@ class EntrenadorModelo:
         self.visualizar_matriz_confusion(metricas_rf)
         self.visualizar_matriz_confusion(metricas_lr)
         self.visualizar_comparacion_modelos()
+        self.visualizar_palabras_importantes()
 
         # 6. Guardar modelos
         print("\n" + "="*80)
