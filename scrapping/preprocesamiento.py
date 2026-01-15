@@ -1,14 +1,15 @@
+import matplotlib
+matplotlib.use('Agg')  # ← AÑADIR ESTA LÍNEA AL INICIO
+import matplotlib.pyplot as plt
+
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import re
 import os
 import unicodedata
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.model_selection import train_test_split
 
 class PreprocesadorNoticias:
-    # Lista de stop words en español (palabras comunes sin valor semántico)
+    # Lista de stop words en español
     STOP_WORDS_ES = [
     'el', 'la', 'de', 'que', 'y', 'a', 'en', 'un', 'ser', 'se', 'no', 'haber',
     'por', 'con', 'su', 'para', 'como', 'estar', 'tener', 'le', 'lo', 'todo',
@@ -49,22 +50,11 @@ class PreprocesadorNoticias:
     'febrero', 'marzo', 'abril', 'mayo', 'junio','julio', 'agosto', 'septiembre', 'octubre', 
     'noviembre', 'diciembre','ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 
     'oct', 'nov', 'dic','efe','abc','ee', 'uu'
-]
+    ]
 
     def __init__(self, nombre_archivo='abc_news.csv'):
         self.archivo_entrada = nombre_archivo
         self.df = None
-        self.X_train = None
-        self.X_test = None
-        self.y_train = None
-        self.y_test = None
-        self.vectorizer = TfidfVectorizer(
-            max_features=1500,
-            stop_words=self.STOP_WORDS_ES,
-            ngram_range=(1, 2),
-            min_df=2
-        )
-        self.tfidf_matrix = None
 
     def cargar_datos(self):
         """Carga el CSV y elimina duplicados"""
@@ -81,17 +71,11 @@ class PreprocesadorNoticias:
 
     def eliminar_tildes(self, texto):
         """Elimina tildes y acentos de un texto"""
-        # Normalizar a NFD (descompone caracteres con tilde)
-        # Ejemplo: á → a + ´
         texto_nfd = unicodedata.normalize('NFD', texto)
-        
-        # Filtrar solo caracteres que NO sean marcas de acento
-        # Mantiene letras, números, espacios, pero quita las tildes
         texto_sin_tildes = ''.join(
             char for char in texto_nfd
-            if unicodedata.category(char) != 'Mn'  # Mn = Mark, Nonspacing (tildes)
+            if unicodedata.category(char) != 'Mn'
         )
-        
         return texto_sin_tildes
 
     def limpiar_texto(self, texto):
@@ -104,40 +88,27 @@ class PreprocesadorNoticias:
         
         # Normalizar abreviaturas comunes ANTES de limpiar caracteres especiales
         abreviaturas = {
-            # Estados Unidos (todas las variantes)
             r'\bee\.?\s?uu\.?\b': 'estadosunidos',
             r'\buu\.?\s?ee\.?\b': 'estadosunidos',
             r'\bestados\s+unidos(?:\s+de\s+am[eé]rica)?\b': 'estadosunidos',
-             r'\busa\b': 'estadosunidos',
-            
-            # Recursos Humanos
+            r'\busa\b': 'estadosunidos',
             r'\brr\.?\s?hh\.?\b': 'recursoshumanos',
             r'\brecursos\s+humanos\b': 'recursoshumanos',
-            
-            # Unión Europea
             r'\bunion\s+europea\b': 'unioneuropea',
             r'\bue\b': 'unioneuropea',
-            
-            # Términos políticos/sociales
             r'\bpresos\s+pol[ií]ticos\b': 'presospoliticos',
             r'\bderechos\s+humanos\b': 'derechoshumanos',
             r'\bcambio\s+clim[aá]tico\b': 'cambioclimatico',
             r'\binteligencia\s+artificial\b': 'inteligenciaartificial',
-            
-            # Organizaciones internacionales
             r'\bnaciones\s+unidas\b': 'nacionesunidas',
             r'\bonu\b': 'nacionesunidas',
             r'\botan\b': 'otan',
             r'\bfmi\b': 'fmi',
-            
-            # Países compuestos
             r'\breino\s+unido\b': 'reinounido',
             r'\barabia\s+saud[ií]\b': 'arabiasaudi',
             r'\bcorea\s+del\s+sur\b': 'coreadelsur',
             r'\bcorea\s+del\s+norte\b': 'coreadelnorte',
             r'\bnueva\s+zelanda\b': 'nuevazelanda',
-            
-            # Términos económicos
             r'\bpib\b': 'pib',
             r'\biva\b': 'iva',
         }
@@ -145,19 +116,19 @@ class PreprocesadorNoticias:
         for patron, reemplazo in abreviaturas.items():
             texto = re.sub(patron, reemplazo, texto)
 
-        # ← NUEVO: Eliminar tildes ANTES de quitar caracteres especiales
+        # Eliminar tildes
         texto = self.eliminar_tildes(texto)
 
         # Quitar números
         texto = re.sub(r'\d+', '', texto)
 
         # Quitar caracteres especiales (mantener solo letras sin tilde y espacios)
-        texto = re.sub(r'[^a-zn\s]', ' ', texto)  # Solo a-z y ñ
+        texto = re.sub(r'[^a-zn\s]', ' ', texto)
 
         # Quitar espacios múltiples
         texto = " ".join(texto.split())
 
-        # Eliminar stopwords (también sin tildes)
+        # Eliminar stopwords
         palabras = texto.split()
         palabras_filtradas = [p for p in palabras if p not in self.STOP_WORDS_ES]
         texto = " ".join(palabras_filtradas)
@@ -181,12 +152,12 @@ class PreprocesadorNoticias:
         antes = len(self.df)
         self.df = self.df[self.df['texto_limpio'].str.len() > 10]
         
-        # Reset de índices para evitar desincronización con tfidf_matrix
+        # Reset de índices
         self.df = self.df.reset_index(drop=True)
         
         print(f"✓ Texto limpiado (Eliminados {antes - len(self.df)} artículos con texto muy corto)")
         
-        # Mostrar ejemplos de antes/después
+        # Mostrar ejemplos
         print(f"\n📝 Ejemplo de limpieza:")
         print(f"  ANTES: {self.df['texto_completo'].iloc[0][:100]}...")
         print(f"  DESPUÉS: {self.df['texto_limpio'].iloc[0][:100]}...")
@@ -194,72 +165,6 @@ class PreprocesadorNoticias:
         # Guardar CSV limpio
         self.df.to_csv('abc_news_limpio.csv', index=False, encoding='utf-8')
         print(f"\n✓ CSV limpio guardado: 'abc_news_limpio.csv'")
-
-    def aplicar_tfidf(self):
-        """Convierte cada artículo en un vector de números usando TF-IDF"""
-        print("\n🔢 Aplicando TF-IDF...")
-
-        # Ajustar y transformar
-        self.tfidf_matrix = self.vectorizer.fit_transform(self.df['texto_limpio'])
-
-        print(f"✓ TF-IDF aplicado")
-        print(f"  - Shape de la matriz: {self.tfidf_matrix.shape}")
-        print(f"  - {self.tfidf_matrix.shape[0]} documentos")
-        print(f"  - {self.tfidf_matrix.shape[1]} features (palabras/bigramas únicos)")
-        print(f"  - Vocabulario total: {len(self.vectorizer.vocabulary_)} términos")
-
-    def dividir_train_test(self, test_size=0.2, random_state=42):
-        """Divide los datos en 80% entrenamiento y 20% prueba"""
-        print(f"\n✂️ Dividiendo datos en Train/Test ({int((1-test_size)*100)}% / {int(test_size*100)}%)...")
-
-        X = self.tfidf_matrix
-        y = self.df['categoria'].values
-
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
-            X, y,
-            test_size=test_size,
-            random_state=random_state,
-            stratify=y
-        )
-
-        print(f"✓ División completada:")
-        print(f"  - Train: {self.X_train.shape[0]} artículos")
-        print(f"  - Test: {self.X_test.shape[0]} artículos")
-
-        # Mostrar distribución por categoría
-        print(f"\n📊 Distribución en Train:")
-        unique, counts = np.unique(self.y_train, return_counts=True)
-        for cat, count in zip(unique, counts):
-            print(f"  - {cat}: {count}")
-
-        print(f"\n📊 Distribución en Test:")
-        unique, counts = np.unique(self.y_test, return_counts=True)
-        for cat, count in zip(unique, counts):
-            print(f"  - {cat}: {count}")
-
-    def palabras_importantes_por_categoria(self, top_n=20):
-        """BONUS: Muestra las palabras más importantes de cada categoría"""
-        print(f"\n⭐ Top {top_n} palabras más importantes por categoría:")
-        print("="*80)
-
-        feature_names = np.array(self.vectorizer.get_feature_names_out())
-
-        for categoria in sorted(self.df['categoria'].unique()):
-            print(f"\n🔹 {categoria.upper()}:")
-
-            # Filtrar artículos de esta categoría
-            indices = self.df[self.df['categoria'] == categoria].index
-
-            # Sumar TF-IDF de todos los documentos de esta categoría
-            categoria_tfidf = self.tfidf_matrix[indices].sum(axis=0).A1
-
-            # Obtener las top N palabras
-            top_indices = categoria_tfidf.argsort()[-top_n:][::-1]
-            top_palabras = feature_names[top_indices]
-            top_scores = categoria_tfidf[top_indices]
-
-            for i, (palabra, score) in enumerate(zip(top_palabras, top_scores), 1):
-                print(f"   {i:2d}. {palabra:25s} (score: {score:.2f})")
 
     def analizar_estadisticas(self):
         """Muestra estadísticas básicas del dataset"""
@@ -295,6 +200,7 @@ class PreprocesadorNoticias:
         plt.xticks(rotation=45, ha='right')
         plt.tight_layout()
         plt.savefig('grafico_categorias.png', dpi=300)
+        plt.close()  # ← IMPORTANTE: Cerrar la figura
         print("✓ Gráfico guardado: 'grafico_categorias.png'")
 
     def ejecutar_pipeline_completo(self):
@@ -305,9 +211,6 @@ class PreprocesadorNoticias:
 
         self.cargar_datos()
         self.ejecutar_limpieza()
-        self.aplicar_tfidf()
-        self.dividir_train_test()
-        self.palabras_importantes_por_categoria(20)
         self.analizar_estadisticas()
         self.generar_grafico()
 
@@ -317,14 +220,9 @@ class PreprocesadorNoticias:
         print(f"\n📁 Archivos generados:")
         print(f"  - abc_news_limpio.csv")
         print(f"  - grafico_categorias.png")
-        print(f"\n💾 Datos listos para entrenamiento:")
-        print(f"  - X_train: {self.X_train.shape}")
-        print(f"  - X_test: {self.X_test.shape}")
-        print(f"  - y_train: {self.y_train.shape}")
-        print(f"  - y_test: {self.y_test.shape}")
+        print(f"\n💾 Datos listos para entrenamiento con TF-IDF")
 
 
 if __name__ == "__main__":
-    # Crear instancia y ejecutar pipeline completo
     prep = PreprocesadorNoticias('abc_news.csv')
     prep.ejecutar_pipeline_completo()
