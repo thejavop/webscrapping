@@ -49,7 +49,7 @@ class PreprocesadorNoticias:
     'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo','enero',
     'febrero', 'marzo', 'abril', 'mayo', 'junio','julio', 'agosto', 'septiembre', 'octubre', 
     'noviembre', 'diciembre','ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 
-    'oct', 'nov', 'dic','efe','abc','ee', 'uu'
+    'oct', 'nov', 'dic','efe','abc','ee', 'uu','asi'
     ]
 
     def __init__(self, nombre_archivo='abc_news.csv'):
